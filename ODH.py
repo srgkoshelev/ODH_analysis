@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from pint import UnitRegistry
 
 ureg = UnitRegistry()
+ureg.auto_reduce_dimensions = True
 
 def conc_vent (V, R, Q, t):
 	#V - volume of the confined space (ft3 or m3)
@@ -61,9 +62,12 @@ C_e = conc_vent(V, R, Q, t_e)
 concentration2 = list(map(lambda t: conc_after (V, C_e, Q, t, t_e), time2))
 
 plt.plot([t.magnitude for t in time1], concentration1, [t.magnitude for t in time2], concentration2)
+a = 2*ureg("m")/(1*ureg('ft'))
+# a.ito_base_units()
+print (a)
 
 # plt.plot(time1, concentration1, time2, concentration2)
-plt.show()
+# plt.show()
 
 
 
