@@ -9,44 +9,44 @@ ureg = UnitRegistry()
 ureg.auto_reduce_dimensions = True
 
 def conc_vent (V, R, Q, t):
-	#V - volume of the confined space (ft3 or m3)
-	#R - spill rate into confined space (scfm or m3/s)
-	#Q = ventilation rate of fan(s), (cfm or m3/s); positive value corresponds to blowing air into the confined space, negative - drawing contaminated air outside
-	#t = time, (minutes or seconds) beginning of release is at t=0
-	#C - oxygen concentration in confined space
-	#Case B
-	if Q > 0*ureg('ft^3/min'):
-		C = 0.21/(Q+R)*(Q+R*np.e**-((Q+R)/V*t))
-	elif abs(Q) <= abs(R):
-		C = 0.21*np.e**-(R/V*t)
-	elif abs(Q) > abs(R):
-		C = 0.21*(1-R/abs(Q)*(1-np.e**-(abs(Q)*t/V)))
-	return C
+    #V - volume of the confined space (ft3 or m3)
+    #R - spill rate into confined space (scfm or m3/s)
+    #Q = ventilation rate of fan(s), (cfm or m3/s); positive value corresponds to blowing air into the confined space, negative - drawing contaminated air outside
+    #t = time, (minutes or seconds) beginning of release is at t=0
+    #C - oxygen concentration in confined space
+    #Case B
+    if Q > 0*ureg('ft^3/min'):
+            C = 0.21/(Q+R)*(Q+R*np.e**-((Q+R)/V*t))
+    elif abs(Q) <= abs(R):
+        C = 0.21*np.e**-(R/V*t)
+    elif abs(Q) > abs(R):
+            C = 0.21*(1-R/abs(Q)*(1-np.e**-(abs(Q)*t/V)))
+    return C
 
 
 def conc_final (V, R, Q):
-	#V - volume of the confined space (ft3 or m3)
-	#R - spill rate into confined space (scfm or m3/s)
-	#Q = ventilation rate of fan(s), (cfm or m3/s); positive value corresponds to blowing air into the confined space, negative - drawing contaminated air outside
-	#C - oxygen concentration in confined space
-	#Case B
-	if Q > 0*ureg('ft^3/min'):
-		C = 0.21/(Q+R)*Q
-	elif abs(Q) <= abs(R):
-		C = 0
-	elif abs(Q) > abs(R):
-		C = 0.21*(1-R/abs(Q))
-	return C
+    #V - volume of the confined space (ft3 or m3)
+    #R - spill rate into confined space (scfm or m3/s)
+    #Q = ventilation rate of fan(s), (cfm or m3/s); positive value corresponds to blowing air into the confined space, negative - drawing contaminated air outside
+    #C - oxygen concentration in confined space
+    #Case B
+    if Q > 0*ureg('ft^3/min'):
+            C = 0.21/(Q+R)*Q
+    elif abs(Q) <= abs(R):
+            C = 0
+    elif abs(Q) > abs(R):
+            C = 0.21*(1-R/abs(Q))
+    return C
 
 def conc_after (V, C_e, Q, t, t_e):
-	#V - volume of the confined space (ft3 or m3)
-	#R - spill rate into confined space (scfm or m3/s)
-	#Q = ventilation rate of fan(s), (cfm or m3/s); positive value corresponds to blowing air into the confined space, negative - drawing contaminated air outside
-	#t = time, (minutes or seconds) beginning of release is at t=0
-	#C - oxygen concentration in confined space
-	#C_e = oxygen concentration when the release has ended
-	C = 0.21-(0.21-C_e)*np.e**-(abs(Q)/V*(t-t_e))
-	return C
+    #V - volume of the confined space (ft3 or m3)
+    #R - spill rate into confined space (scfm or m3/s)
+    #Q = ventilation rate of fan(s), (cfm or m3/s); positive value corresponds to blowing air into the confined space, negative - drawing contaminated air outside
+    #t = time, (minutes or seconds) beginning of release is at t=0
+    #C - oxygen concentration in confined space
+    #C_e = oxygen concentration when the release has ended
+    C = 0.21-(0.21-C_e)*np.e**-(abs(Q)/V*(t-t_e))
+    return C
 
 
 V = 1000*ureg('ft^3')
