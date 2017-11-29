@@ -67,7 +67,7 @@ a = 2*ureg("m")/(1*ureg('ft'))
 print (a)
 
 # plt.plot(time1, concentration1, time2, concentration2)
-# plt.show()
+plt.show()
 
 
 
