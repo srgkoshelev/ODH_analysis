@@ -22,11 +22,13 @@ P_MSC = Q_(101325, ureg.Pa) #Metric Standard Conditions (used by Crane TP-410)
 #Probability of failure on demand for main cases
 PFD_power = 1e-4 #For some reason FESHM chapter lists 3e-4 as demand rate and 1e-4/hr failure rate + 1 hr time off. D. Smith's Reliability... states that PFD = lambda*MTD with lambda = 1e-4 1/hr and MDT = 1 hr gives 1e-4 value.
 PFD_odh = 2e-3 #Conservative etimate; form CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
-
+System_fail_prob = [PFD_power, PFD_odh] #list of probabilities that may cause fan not to run (fan failures are calculated separately)
 
 class odh_source:
     """Define the possible source of inert gas"""
+    instances = [] #Keeping information on all the sources within the class
     def __init__ (self,fluid, Volume, phase = 'vapor', pressure = Q_(0, ureg.psig) ):
+        odh_source.instances.append(self) #adding initialized instance to instances list
         self.fluid = fluid
         self.Leaks = {}
         assert phase in ['vapor','liquid', 'gas'], 'Phase can only be liquid or vapor: %r' % phase
@@ -147,20 +149,22 @@ class odh_volume:
     '''
     Volume/building affected by inert gases.
     '''
-    def __init__  (Fluids = ['helium', 'nitrogen'], volume):
+    def __init__  (self, Fluids, volume):
         self.Fluids = Fluids
         self.volume = volume
-        self.phi = 0 #fatality rate
 
-    def fan_fail (Test_period, Mean_repair_time, Fail_rate, Q_fan, N_fans):
+    def fan_fail (self, Test_period, Mean_repair_time, Fail_rate, Q_fan, N_fans):
         '''
         Calculate (Probability, flow) pairs for all combinations of fans working. All fans are expected to have same volume flow
         '''
         Fan_flowrates = []
-        for m in range(N_fans+1):
-            PFD_fan = failure_on_demand(m, N_fans, Test_period, Mean_repair_time, Fail_rate) 
-            Fan_flowrates.append((PFD_fan, Q_fan*m))
-        return Fan_flowrates
+        PFD_prev = 1
+        for m in range(N_fans, -1, -1):
+            PFD_fan = failure_on_demand(m, N_fans, Test_period, Mean_repair_time, Fail_rate) #Probability of failure if m units is required; Equivalent to 0..m units working
+            PFD_m_fan_work = PFD_prev - PFD_fan #Probability exactly m fans work = P(0..m+1) - P(0..m) = PFD_prev-PFD_fan
+            Fan_flowrates.insert(0, (PFD_m_fan_work, Q_fan*m))
+            PFD_prev = PFD_fan
+        self.Fan_flowrates = Fan_flowrates
 
     def PFD_system (self, System_fail_prob):
         '''
@@ -170,7 +174,7 @@ class odh_volume:
         PFD_system_on = 1
         for PFD in System_fail_prob:
             PFD_system_on *= 1-PFD 
-        return 1-PFD_system_on 
+        self.PFD_system = 1-PFD_system_on 
 
     def fatality_prob(self, O2_conc):
         if O2_conc >= 0.18: #Lowest oxygen concentration above 18%
@@ -182,32 +186,46 @@ class odh_volume:
         return Fi
 
     def odh_class(self):
-        if self.phi < 1e-7:
+        if self.phi < 1e-7/ureg.hr:
             return 0
-        elif self.phi < 1e-5:
+        elif self.phi < 1e-5/ureg.hr:
             return 1
-        elif self.phi < 1e-3:
+        elif self.phi < 1e-3/ureg.hr:
             return 2
         else:
             raise Exception ('ODH fatality rate is too high. Please, check calculations')
 
 
-    def odh (self, Sources, PFD_ODH, Fan_flowrates):
+    def odh (self, Sources):
         '''
         Calculate ODH fatality rate and recommend ODH class designation
         '''
-        for source in Soruces: #Sources is a list of odh_source objects
+        self.phi = 0 #fatality rate
+        for source in Sources: #Sources is a list of odh_source objects
             if source.fluid in self.Fluids:
                 for key in source.Leaks.keys():
                     (P_leak, q_leak, tau) = source.Leaks[key]
-                    for (P_fan, Q_fan) in Fan_flowrates:
-                        P_i = P_leak*PFD_ODH*P_fan #expected rate of the event
-                        O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
-                        F_i = self.fatality_prob(O2_conc)
-                        self.phi += P_i*F_i
-        print ('Fatality rate for tis volume is {}'.format(self.phi))
+                    P_i = P_leak*self.PFD_system #power or ODH system failure
+                    O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational; fans are not operational
+                    F_i = self.fatality_prob(O2_conc)
+                    print (key, 'No power', O2_conc/0.21*100, P_i*F_i)
+                    self.phi += P_i*F_i
+                    if hasattr(self, 'Fan_flowrates'):
+                        if hasattr(self, 'PFD_system'):
+                            for (P_fan, Q_fan) in self.Fan_flowrates:
+                                P_i = P_leak*(1-self.PFD_system)*P_fan #Probability of leak occuring, ODH system/power working and m number of fans working
+                                O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
+                                #O2_conc = conc_final (self.volume, q_leak, Q_fan)
+                                F_i = self.fatality_prob(O2_conc)
+                                print (key, Q_fan, O2_conc/0.21*100, P_i*F_i)
+                                self.phi += P_i*F_i
+                        else:
+                            raise Exception ('Need to calculate ODH system failure probability first')
+                    else:
+                        raise Exception ('Need to calculate Fan flowrates first')
+        print ('Fatality rate for this volume is {}'.format(self.phi))
 
-        print ('Recommended ODH class {}'.format(self.odh_clas()))
+        print ('Recommended ODH class {}'.format(self.odh_class()))
         
 
 
@@ -224,8 +242,11 @@ def limit_flow(flow, failure_mode):
         return flow
 
 def failure_on_demand (m, n, Test_period, Mean_repair_time, failure_rate):
-    '''Failure on demand probability
-    probability of m units starting out of n
+    '''
+    Failure on demand probability
+    The definition in FESHM chapter (probability of m units out of n starting) is incorrect. Definition in D. Smoth's Reliability... is confusing.
+    This value represents the probability of system failure if for normal functioning only m units out of n is required.
+    1 - PFD gives the probability of at least m units out of n starting. That is usually not what required for ODH analysis. The workaround should be used.
     '''
     MDT = Test_period/2+Mean_repair_time
     PFD = ((MDT*failure_rate*m)**(n+1-m))/math.factorial(n+1-m)
@@ -306,11 +327,11 @@ def conc_vent (V, R, Q, t):
     #C - oxygen concentration in confined space
     #Case B
     if Q > 0*ureg('ft^3/min'):
-            C = 0.21/(Q+R)*(Q+R*np.e**-((Q+R)/V*t))
+            C = 0.21/(Q+R)*(Q+R*math.e**-((Q+R)/V*t))
     elif abs(Q) <= abs(R):
-        C = 0.21*np.e**-(R/V*t)
+        C = 0.21*math.e**-(R/V*t)
     elif abs(Q) > abs(R):
-            C = 0.21*(1-R/abs(Q)*(1-np.e**-(abs(Q)*t/V)))
+            C = 0.21*(1-R/abs(Q)*(1-math.e**-(abs(Q)*t/V)))
     return C
 
 
@@ -339,74 +360,10 @@ def conc_after (V, C_e, Q, t, t_e):
     return C
 
 
-#Adding the inert gas sources
-
-He_storage_dewar_liquid = odh_source('helium', Q_(10000, ureg.L), 'liquid')
-He_storage_dewar_gas = odh_source('helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
-Buffer_tank_1 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(250, ureg.psig))
-Buffer_tank_2 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(250, ureg.psig))
-Buffer_tank_3 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
-Buffer_tank_4 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
-Buffer_tank_5 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
-Buffer_tank_6 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
-VTS_1 = odh_source('helium', Q_(1560, ureg.L), 'liquid')
-VTS_2 = odh_source('helium', Q_(3256, ureg.L), 'liquid')
-VTS_3 = odh_source('helium', Q_(3256, ureg.L), 'liquid')
-VMTF = odh_source('helium', Q_(1450, ureg.L), 'liquid') #without displacer
-Portable_500L = odh_source('helium', Q_(500, ureg.L), 'liquid')
-Stand_4 = odh_source('helium', Q_(450, ureg.L), 'liquid') #LHC magnet and feed can, single phase
-Suction_buffer = odh_source('helium', Q_(500, ureg.cubic_feet), 'gas', Q_(80, ureg.psig)) #suction buffer + return pipe
-Quench_tank = odh_source('helium', 2*Q_(134, ureg.cubic_feet), 'gas', Q_(100, ureg.psig)) #two quench tanks that behave as one volume
-Distribution_box = odh_source('helium', Q_(68, ureg.L), 'liquid') #distribution box He subcooler
-MCTF = odh_source('helium', Q_(114, ureg.L), 'liquid') #calibration/research cryostat
-LN2_portable_180L = odh_source('nitrogen', Q_(180, ureg.L), 'liquid')
-LN2_storage_dewar = odh_source('nitrogen', Q_(10000, ureg.gallon), 'liquid')
-
-Sources = [He_storage_dewar_liquid, He_storage_dewar_gas, Buffer_tank_1, Buffer_tank_2, Buffer_tank_3, Buffer_tank_4, Buffer_tank_5, Buffer_tank_6, VTS_1, VTS_2, VTS_3, VMTF, Portable_500L, Stand_4, Suction_buffer, Quench_tank, Distribution_box, MCTF, LN2_portable_180L, LN2_storage_dewar]
-
-He_storage_dewar_liquid.leak({'mode':'fluid line', 'Pipe':{'D_nom':0.5, 'SCH':5}, 'N_lines':11, 'Fluid_data':{'P': 12*ureg.psig, 'T':4.2*ureg.K}}) #Transfer lines going between Cold Box and Dewar, and Distribution Box
-He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':4, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 285*ureg.psig, 'T':300*ureg.K}, 'max_flow':211*ureg('g/s')}) #Supply to Cold Box; Max flow is taken as Sullair max capacity at discharge
-He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':6, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 35*ureg.psig, 'T':300*ureg.K}, 'max_flow':108*ureg('g/s')}) #Mid stage; Max flow is taken as midstage return from cryoplant
-He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':8, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 16.5*ureg.psig, 'T':300*ureg.K}, 'max_flow':100*ureg('g/s')}) #Return (suction); Max flow is taken from Mycom room ODH analysis as Total supply rate to suction piping
-He_storage_dewar_liquid.leak({'mode':'other', 'cause':'bayonet leak', 'Prob':1, 'N':27, 'q':128*ureg('g/s')})
-
-def print_leaks (odh_source):
-    for key in sorted(odh_source.Leaks.keys()):
-        print (key)
-        print (odh_source.Leaks[key])
-        print ()
-
-
-for source in Sources:
-    print (source.volume)
-    print()
-    print_leaks (source)
-    print('\n'*2)
 
 
 
 
-Test_period = 1*ureg('week').ito(ureg.hr) #IB1 fan test period (to be updated)
-Mean_repair_time = 0*ureg.hr #IB1 fan/louver average repair time (to be updated)
-l_fan = 9e-6/ureg.hr #Fan failure rate
-l_louv = 3e-7/ureg.hr #Louver failure rate
-l_vent = l_fan+l_louv #At IB1 louver and fan are installed in series; failure of either one results in no venting
-
-
-def safe (self, escape = True): #move into calculation part - it's a single case things
-    A = Q_(1550, ureg.square_feet) #IB1 floor area
-    He_height = [3.3, 9.8, 19.8]*ureg.feet
-    N2_height = 0.6*ureg.m #height of a sitting person
-    if self.fluid == 'helium':
-        V_effect = [A*h for h in He_height]
-    elif self.fluid == 'nitrogen':
-        V_effect = [A*N2_height] #Volume affected by inert gas
-    if escape == True: #if mixed air is allowed to escape within considered volume
-        O2_conc = [0.21*V/(V+self.volume) for V in V_effect]
-    else: #worst case; inert gas is trapped and expells the air outside the considered volume
-        O2_conc = [0.21*(1-self.volume/V) for V in V_effect]
-    #print ( [self.fatality_prob(conc) == 0 for conc in O2_conc])
-    return all([self.fatality_prob(conc) == 0 for conc in O2_conc])
 
 
 
@@ -417,10 +374,89 @@ def safe (self, escape = True): #move into calculation part - it's a single case
 
     
 if __name__ == "__main__":
-    pass
-#    Fluid = {'fluid':'air', 'P':20*101325*ureg('Pa'), 'T':Q_(315,ureg.K)}
-#    d_leak = 1*ureg.mm
-    #print (leak_flow())
-#    print (Q_(14.7,ureg('psig')).to(ureg.psi))
-#    print (Q_(0,ureg('psig')).to(ureg.psi))
+    #Adding the inert gas sources
+
+    He_storage_dewar_liquid = odh_source('helium', Q_(10000, ureg.L), 'liquid')
+    He_storage_dewar_gas = odh_source('helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
+    Buffer_tank_1 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(250, ureg.psig))
+    Buffer_tank_2 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(250, ureg.psig))
+    Buffer_tank_3 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
+    Buffer_tank_4 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
+    Buffer_tank_5 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
+    Buffer_tank_6 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
+    VTS_1 = odh_source('helium', Q_(1560, ureg.L), 'liquid')
+    VTS_2 = odh_source('helium', Q_(3256, ureg.L), 'liquid')
+    VTS_3 = odh_source('helium', Q_(3256, ureg.L), 'liquid')
+    VMTF = odh_source('helium', Q_(1450, ureg.L), 'liquid') #without displacer
+    Portable_500L = odh_source('helium', Q_(500, ureg.L), 'liquid')
+    Stand_4 = odh_source('helium', Q_(450, ureg.L), 'liquid') #LHC magnet and feed can, single phase
+    Suction_buffer = odh_source('helium', Q_(500, ureg.cubic_feet), 'gas', Q_(80, ureg.psig)) #suction buffer + return pipe
+    Quench_tank = odh_source('helium', 2*Q_(134, ureg.cubic_feet), 'gas', Q_(100, ureg.psig)) #two quench tanks that behave as one volume
+    Distribution_box = odh_source('helium', Q_(68, ureg.L), 'liquid') #distribution box He subcooler
+    MCTF = odh_source('helium', Q_(114, ureg.L), 'liquid') #calibration/research cryostat
+    LN2_portable_180L = odh_source('nitrogen', Q_(180, ureg.L), 'liquid')
+    LN2_storage_dewar = odh_source('nitrogen', Q_(10000, ureg.gallon), 'liquid')
+
+    #Sources = [He_storage_dewar_liquid, He_storage_dewar_gas, Buffer_tank_1, Buffer_tank_2, Buffer_tank_3, Buffer_tank_4, Buffer_tank_5, Buffer_tank_6, VTS_1, VTS_2, VTS_3, VMTF, Portable_500L, Stand_4, Suction_buffer, Quench_tank, Distribution_box, MCTF, LN2_portable_180L, LN2_storage_dewar]
+
+    He_storage_dewar_liquid.leak({'mode':'fluid line', 'Pipe':{'D_nom':0.5, 'SCH':5}, 'N_lines':11, 'Fluid_data':{'P': 12*ureg.psig, 'T':4.2*ureg.K}}) #Transfer lines going between Cold Box and Dewar, and Distribution Box
+    He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':4, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 285*ureg.psig, 'T':300*ureg.K}, 'max_flow':211*ureg('g/s')}) #Supply to Cold Box; Max flow is taken as Sullair max capacity at discharge
+    He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':6, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 35*ureg.psig, 'T':300*ureg.K}, 'max_flow':108*ureg('g/s')}) #Mid stage; Max flow is taken as midstage return from cryoplant
+    He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':8, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 16.5*ureg.psig, 'T':300*ureg.K}, 'max_flow':100*ureg('g/s')}) #Return (suction); Max flow is taken from Mycom room ODH analysis as Total supply rate to suction piping
+    He_storage_dewar_liquid.leak({'mode':'other', 'cause':'bayonet leak', 'Prob':1e-6/ureg.hr, 'N':27, 'q':128*ureg('g/s')})
+
+    def print_leaks (odh_source):
+        for key in sorted(odh_source.Leaks.keys()):
+            print (key)
+            print (odh_source.Leaks[key])
+            print ()
+
+
+    for source in odh_source.instances:
+        print (source.volume)
+        print()
+        print_leaks (source)
+        print('\n'*2)
+    Test_period = 1*ureg('month') #IB1 fan test period 
+    Test_period.ito(ureg.hr)
+    Mean_repair_time = 3*ureg('days') #IB1 fan/louver average repair time: most delay is caused by response time, it has recently improved from about 1 week to 1 day. The average value of 3 days is assumed
+    l_fan = 9e-6/ureg.hr #Fan failure rate
+    l_louv = 3e-7/ureg.hr #Louver failure rate
+    l_vent = l_fan+l_louv #At IB1 louver and fan are installed in series; failure of either one results in no venting
+    Q_fan = 4000*ureg.ft**3/ureg.min #Flowrate of 4 ceiling fans is >= 4000 CFM
+    N_fans = 4
+
+    A = Q_(1550, ureg.square_feet) #IB1 floor area
+    Coldbox_platform = odh_volume(['helium'], A*3.3*ureg.feet) #Platform above the coldbox, 40 in below ceiling
+    IB1_2nd_floor = odh_volume(['helium'], A*9.8*ureg.feet) #Second floor offices, floor above washrooms, north and south power supply mezzanines, stand 4 platform
+    IB1_air = odh_volume(['helium', 'nitrogen'], A*19.8*ureg.feet) #All IB1 air
+    Ground_floor = odh_volume(['nitrogen'], A*0.6*ureg.m) #Bottom layer of the building, affected by cold nitrogen gas; 0.6m is average height of a sitting person
+
+    IB1_air.fan_fail(Test_period, Mean_repair_time, l_vent, Q_fan, N_fans)
+    print (IB1_air.Fan_flowrates)
+    IB1_air.PFD_system (System_fail_prob)
+    IB1_air.odh(odh_source.instances)
+
+    #def fan_fail (Test_period, Mean_repair_time, Fail_rate, Q_fan, N_fans):
+
+
+    #if self.fluid == 'helium':
+    #    V_effect = [A*h for h in He_height]
+    #elif self.fluid == 'nitrogen':
+    #    V_effect = [A*N2_height] #Volume affected by inert gas
+
+    #def safe (self, escape = True): #move into calculation part - it's a single case things
+    #    A = Q_(1550, ureg.square_feet) #IB1 floor area
+    #    He_height = [3.3, 9.8, 19.8]*ureg.feet
+    #    N2_height = 0.6*ureg.m #height of a sitting person
+    #    if self.fluid == 'helium':
+    #        V_effect = [A*h for h in He_height]
+    #    elif self.fluid == 'nitrogen':
+    #        V_effect = [A*N2_height] #Volume affected by inert gas
+    #    if escape == True: #if mixed air is allowed to escape within considered volume
+    #        O2_conc = [0.21*V/(V+self.volume) for V in V_effect]
+    #    else: #worst case; inert gas is trapped and expells the air outside the considered volume
+    #        O2_conc = [0.21*(1-self.volume/V) for V in V_effect]
+    #    #print ( [self.fatality_prob(conc) == 0 for conc in O2_conc])
+    #    return all([self.fatality_prob(conc) == 0 for conc in O2_conc])
 
