@@ -11,8 +11,6 @@ ureg = ht.ureg
 Q_ = ureg.Quantity
 #ureg.auto_reduce_dimensions = True
 
-
-
 T_NTP = Q_(68, ureg.degF) #Normal Temperature (NIST)
 P_NTP = Q_(14.7, ureg.psi) #Normal Pressure (NIST)
 
@@ -27,7 +25,7 @@ System_fail_prob = [PFD_power, PFD_odh] #list of probabilities that may cause fa
 class odh_source:
     """Define the possible source of inert gas"""
     instances = [] #Keeping information on all the sources within the class
-    def __init__ (self,fluid, Volume, phase = 'vapor', pressure = Q_(0, ureg.psig) ):
+    def __init__ (self,fluid, Volume, phase = 'gas', pressure = P_NTP): 
         odh_source.instances.append(self) #adding initialized instance to instances list
         self.fluid = fluid
         self.Leaks = {}
@@ -43,6 +41,18 @@ class odh_source:
             self.volume = Volume*D_fluid_sat/D_fluid_std
             #print (D_fluid_sat,D_fluid_std)
         self.volume.ito(ureg('ft**3'))
+
+    def __add__ (self, other):
+        if self.fluid == other.fluid:
+            total_volume = self.volume + other.volume
+            return odh_source(self.fluid, total_volume, 'gas', P_NTP) 
+        else:
+            raise Exception ('\nBoth volumes should contain the same fluid')
+
+    def __str__ (self):
+        return 'ODH source of ' + self.fluid + ' with volume = ' + '{:.3~}'.format(self.volume)
+
+
 
     def calculate_gas_leak (self, cause, failure_mode):
         '''
@@ -384,6 +394,8 @@ if __name__ == "__main__":
     Buffer_tank_4 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
     Buffer_tank_5 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
     Buffer_tank_6 = odh_source('helium', Q_(4000,'ft**3'), 'gas', Q_(195, ureg.psig))
+    print (Buffer_tank_1, Buffer_tank_2, Buffer_tank_1+Buffer_tank_2)
+    input()
     VTS_1 = odh_source('helium', Q_(1560, ureg.L), 'liquid')
     VTS_2 = odh_source('helium', Q_(3256, ureg.L), 'liquid')
     VTS_3 = odh_source('helium', Q_(3256, ureg.L), 'liquid')
