@@ -27,6 +27,9 @@ PFD_power = 1e-4 #For some reason FESHM chapter lists 3e-4 as demand rate and 1e
 PFD_odh = 2e-3 #Conservative etimate; form CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 System_fail_prob = [PFD_power, PFD_odh] #list of probabilities that may cause fan not to run (fan failures are calculated separately)
 
+#Gas pipe safety factor
+Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and number of welds. Unfortunately both values are hard to estimate accurately thus a safety factor is used
+
 class odh_source:
     """Define the possible source of inert gas"""
     instances = [] #Keeping information on all the sources within the class
@@ -102,6 +105,7 @@ class odh_source:
         if Area:
             q_std = limit_flow(leak_flow(failure_mode['Fluid_data'],  Area), failure_mode)
             tau = self.volume/q_std
+            Prob *= Fs_gas #Including safety factor due to uncertainty in piping length/weld number estimation
             Prob.ito(1/ureg.hr)
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
@@ -156,8 +160,7 @@ class odh_source:
             else:
                 Prob_total = Prob*failure_mode.get('N', 1) #Total probability of failure
                 Prob.ito(1/ureg.hr)
-            q = limit_flow(failure_mode['q'], failure_mode)
-            q_std = to_standard_flow(q, Fluid_data)
+            q_std = limit_flow(failure_mode['q'], failure_mode)
             tau = self.volume/q_std
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
@@ -240,11 +243,11 @@ class odh_volume:
                     P_i = P_leak*self.PFD_system #power or ODH system failure
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                     F_i = self.fatality_prob(O2_conc)
-                    if P_i*F_i >= 1e-9/ureg.hr:
+                    if P_i*F_i >= 1e-6/ureg.hr:
                         logger.info ('Source: '+source.name)
                         logger.info ('Failure: '+key+' and No power')
                         logger.info ('Oxygen, percent of norm: {:.2%}'.format(O2_conc/0.21))
-                        logger.info ('Leak rate: {:.2~}'.format(P_leak))
+                        logger.info ('Leak prob rate: {:.2~}'.format(P_leak))
                         logger.info ('System prob: {:.2%}'.format(self.PFD_system))
                         logger.info ('Failure rate: {:.2~}'.format(P_i))
                         logger.info ('Fatality prob: {:.2g}'.format(F_i))
@@ -257,11 +260,11 @@ class odh_volume:
                                 O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
                                 #O2_conc = conc_final (self.volume, q_leak, Q_fan)
                                 F_i = self.fatality_prob(O2_conc)
-                                if P_i*F_i >= 1e-9/ureg.hr:
+                                if P_i*F_i >= 1e-6/ureg.hr:
                                     logger.info ('Source: '+source.name)
                                     logger.info ('Failure: '+key)
                                     logger.info ('Oxygen, percent of norm: {:.2%}'.format(O2_conc/0.21))
-                                    logger.info ('Leak rate: {:.2~}'.format(P_leak))
+                                    logger.info ('Leak prob rate: {:.2~}'.format(P_leak))
                                     logger.info ('System prob: {:.2%}'.format(1-self.PFD_system))
                                     logger.info ('Failure rate: {:.2~}'.format(P_i))
                                     logger.info ('Leak rate: {:.2~}'.format(q_leak))
@@ -273,18 +276,19 @@ class odh_volume:
                             raise Exception ('Need to calculate ODH system failure probability first')
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
-        print ('Fatality rate for this volume is {:.3}'.format(self.phi))
-
-        print ('Recommended ODH class {}'.format(self.odh_class()))
         
 
 
 
 def limit_flow(flow, failure_mode):
     '''
-    Leak through the openning sometimes cannot be larger than a certain number, e.g. a compressor throughput. This function limits flow to this value if it exists
+    Leak through the openning sometimes cannot be larger than a certain number, e.g. a compressor throughput. This function limits flow to this value if it exists.
+    Max flow should be specified for flowing conditions (Fluid_data).
+    Additionally converts the flow to standard conditions (required for comparison).
     '''
     max_flow = failure_mode.get('max_flow')
+    #logger.debug('Failure mode: {} Flow: {:.3~}, STD flow: {:.3~}'.format(failure_mode.get('cause', failure_mode['mode']), flow, to_standard_flow(flow, failure_mode['Fluid_data']) ))
+    flow = to_standard_flow(flow, failure_mode['Fluid_data'])
     if max_flow:
         max_flow = to_standard_flow(max_flow, failure_mode['Fluid_data']) #converting max_flow to standard volumetric flow  
         return min (flow, max_flow)
@@ -312,10 +316,14 @@ def to_standard_flow(flow_rate, Fluid_data):
     if flow_rate.dimensionality == ureg('kg/s').dimensionality: #mass flow, flow conditions are unnecessary
         q_std = flow_rate/(D_NTP*M)
     elif flow_rate.dimensionality == ureg('m^3/s').dimensionality: #volumetric flow given, converting to standard pressure and temperature
-        (fluid, T_fluid, P_fluid) = ht.unpack_fluid(Fluid_data)
-        (x, M, D_fluid) = ht.rp_init(Fluid_data)
-        q_std = flow_rate*D_fluid/D_NTP
-    q_std.ito(ureg.m**3/ureg.s)
+        if Fluid_data.get('T_fluid') and Fluid_data.get('P_fluid'):
+            (fluid, T_fluid, P_fluid) = ht.unpack_fluid(Fluid_data)
+            (x, M, D_fluid) = ht.rp_init(Fluid_data)
+            q_std = flow_rate*D_fluid/D_NTP
+        else:
+            logger.warning('Flow conditions are not set. Assuming standard flow at NTP')
+            q_std = flow_rate
+    q_std.ito(ureg.ft**3/ureg.min)
     return q_std
 
 
@@ -335,38 +343,34 @@ def leak_flow (Fluid_data = {'fluid':'air', 'P':2.33*ureg('bar'), 'T':Q_(40,ureg
         DeltaP = P_fluid*(1-rc) #Crane TP-410, p 2-15
     quality = ht.flsh('TP', T_fluid, P_fluid, x)['q']
     if quality >= 1:
-        (x_a, M_a) = ht.rp_init({'fluid':'air'})
-        S_g = M/M_a #Specific gravity
-        q = orifice_flow_gas(Y, d, C, S_g, DeltaP, rho)
+        g = orifice_flow_gas(Y, d, C, DeltaP, rho)
     else:
-        q = orifice_flow_liquid(d, C, DeltaP, rho) #Calculating liquid flow through the opening. Assuming no evaporation happens
+        g = orifice_flow_liquid(d, C, DeltaP, rho) #Calculating liquid flow through the opening. Assuming no evaporation happens
 
-    q_NTP = to_standard_flow(q, Fluid_data) #convert to NTP standard point
-    q_NTP.ito(ureg.cubic_feet/ureg.min)
-    return q_NTP
+    return g
 
-def orifice_flow_gas (Y, d, C, S_g, DeltaP, rho):
+def orifice_flow_gas (Y, d, C, DeltaP, rho):
     '''Wrapper function for flow through orifice equation.
-    Original formula in crane uses a non-dimensionless coefficient 0.0002864 and non-SI units for values in formulas so straightforward approach is complicated.
+    Original formula in crane uses a non-dimensionless coefficient 0.0003512 and non-SI units for values in formulas so straightforward approach is complicated.
     '''
     d_1 = d.to(ureg.mm).magnitude #diameter in mm
     Deltap = DeltaP.to(ureg.bar).magnitude #Pressure drop in bar
     rho_1 = rho.to(ureg.kg/ureg.m**3).magnitude #Density of inflow in kg/m^3
-    q = 0.0002864*Y*d_1**2*C/(S_g)*(Deltap*rho_1)**0.5 #Flow at MSC in m^3/s; Crane TP-410, Eq.3-22
-    q = q*ureg('m^3/s')
-    return q
+    g = 0.0003512*Y*d_1**2*C*(Deltap*rho_1)**0.5 #mass flow through the orifice in kg/s; Crane TP-410, Eq.3-22
+    g = g*ureg('kg/s')
+    return g
 
 
 def orifice_flow_liquid (d, C, DeltaP, rho):
     '''Wrapper function for flow through orifice equation.
-    Original formula in crane uses a non-dimensionless coefficient 0.0002864 and non-SI units for values in formulas so straightforward approach is complicated.
+    Original formula in crane uses a non-dimensionless coefficient 0.0003512 and non-SI units for values in formulas so straightforward approach is complicated.
     '''
     d_1 = d.to(ureg.mm).magnitude #diameter in mm
     Deltap = DeltaP.to(ureg.bar).magnitude #Pressure drop in bar
     rho_1 = rho.to(ureg.kg/ureg.m**3).magnitude #Density of inflow in kg/m^3
-    q = 0.0003512*d_1**2*C*(Deltap/rho_1)**0.5 #Flow at MSC in m^3/s; Crane TP-410, Eq.3-21
-    q = q*ureg('m^3/s')
-    return q
+    g = 0.0003512*d_1**2*C*(Deltap*rho_1)**0.5 #mass flow through the orifice in kg/s; Crane TP-410, Eq.3-21
+    g = g*ureg('kg/s')
+    return g
 
 
 def conc_vent (V, R, Q, t):
@@ -476,6 +480,7 @@ if __name__ == "__main__":
     #plt.plot(tau.magnitude, C_in, label = 'In')
     plt.legend()
     #plt.show()
+    print (to_standard_flow(6910*ureg('g/s'), {'fluid':'helium'}).to(ureg.ft**3/ureg.min))
 
 
 
