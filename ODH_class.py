@@ -63,6 +63,13 @@ class odh_source:
 
     def __str__ (self):
         if self.name:
+            return self.name
+        else:
+            return ''
+
+
+    def info (self):
+        if self.name:
             return self.name+' is an ODH source of ' + self.fluid + ' with volume = ' + '{:.3~}'.format(self.volume)
         else:
             return ''
@@ -193,6 +200,9 @@ class odh_volume:
         self.Fluids = Fluids
         self.volume = volume
 
+    def __str__ (self):
+            return self.name
+
     def fan_fail (self, Test_period, Mean_repair_time, Fail_rate, Q_fan, N_fans):
         '''
         Calculate (Probability, flow) pairs for all combinations of fans working. All fans are expected to have same volume flow
@@ -265,7 +275,7 @@ class odh_volume:
                         self.phi += P_i*F_i
                     else:
                         logger.warning('Flat probability for event. The source will be analyzed for safety')
-                        if self.source_safe(source.Leaks[key]):
+                        if self.source_safe(source):
                             logger.info("{} doesn't contain enough gas to cause fatality in {}".format(source.name, self.name))
                             continue
                         else:
@@ -296,16 +306,14 @@ class odh_volume:
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
 
-    def source_safe(self, leak, escape = True):
+    def source_safe(self, source, escape = True):
         '''
         Estimate the impact of the Source vokume on oxygen concetration. Smaller sources might not be able to drop oxygen concentration to dangerous levels.
         '''
-        (P_leak, q_leak, tau) = leak
-        V_inert = q_leak*tau #restoring the volume of the inert gas source
         if escape == True: #if mixed air is allowed to escape within considered volume
-            O2_conc = 0.21*self.volume/(self.volume+V_inert)
+            O2_conc = 0.21*self.volume/(self.volume+source.volume)
         else: #worst case; inert gas is trapped and expells the air outside the considered volume
-            O2_conc = 0.21*(1-V_inert/self.volume)
+            O2_conc = 0.21*(1-source.volume/self.volume)
         return self.fatality_prob(O2_conc) == 0
 
         
