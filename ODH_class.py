@@ -24,6 +24,7 @@ P_MSC = Q_(101325, ureg.Pa) #Metric Standard Conditions (used by Crane TP-410)
 
 #Probability of failure on demand for main cases
 PFD_power = 1e-4 #For some reason FESHM chapter lists 3e-4 as demand rate and 1e-4/hr failure rate + 1 hr time off. D. Smith's Reliability... states that PFD = lambda*MTD with lambda = 1e-4 1/hr and MDT = 1 hr gives 1e-4 value.
+Lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant leaks
 PFD_odh = 2e-3 #Conservative etimate; form CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 System_fail_prob = [PFD_power, PFD_odh] #list of probabilities that may cause fan not to run (fan failures are calculated separately)
 
@@ -240,19 +241,28 @@ class odh_volume:
             if source.fluid in self.Fluids:
                 for key in source.Leaks.keys():
                     (P_leak, q_leak, tau) = source.Leaks[key]
-                    P_i = P_leak*self.PFD_system #power or ODH system failure
-                    O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
-                    F_i = self.fatality_prob(O2_conc)
-                    if P_i*F_i >= 1e-6/ureg.hr:
-                        logger.info ('Source: '+source.name)
-                        logger.info ('Failure: '+key+' and No power')
-                        logger.info ('Oxygen, percent of norm: {:.2%}'.format(O2_conc/0.21))
-                        logger.info ('Leak prob rate: {:.2~}'.format(P_leak))
-                        logger.info ('System prob: {:.2%}'.format(self.PFD_system))
-                        logger.info ('Failure rate: {:.2~}'.format(P_i))
-                        logger.info ('Fatality prob: {:.2g}'.format(F_i))
-                        logger.info ('Fatality rate: {:.2~}\n'.format(P_i*F_i))
-                    self.phi += P_i*F_i
+                    if hasattr(P_leak, 'dimensionality'):
+                        P_i = P_leak*self.PFD_system #power or ODH system failure
+                        O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
+                        F_i = self.fatality_prob(O2_conc)
+                        if P_i*F_i >= 1e-8/ureg.hr:
+                            logger.info ('Source: '+source.name)
+                            logger.info ('Failure: '+key+' and No power')
+                            logger.info ('Oxygen, percent of norm: {:.2%}'.format(O2_conc/0.21))
+                            logger.info ('Leak prob rate: {:.2~}'.format(P_leak))
+                            logger.info ('System prob: {:.2%}'.format(self.PFD_system))
+                            logger.info ('Failure rate: {:.2~}'.format(P_i))
+                            logger.info ('Fatality prob: {:.2g}'.format(F_i))
+                            logger.info ('Fatality rate: {:.2~}\n'.format(P_i*F_i))
+                        self.phi += P_i*F_i
+                    else:
+                        logger.warning('Flat probability for event. The source will be analyzed for safety')
+                        if self.source_safe(source.Leaks[key]):
+                            logger.info("The source doesn't contain enough gas to cause fatality: {:.3~}".format(q_leak*tau))
+                            continue
+                        else:
+                            logger.error('The source contains dangerous amount of gas. Additional analysis is required')
+                            #TODO Constant leak analysis using HVAC ACH
                     if hasattr(self, 'Fan_flowrates'):
                         if hasattr(self, 'PFD_system'):
                             for (P_fan, Q_fan) in self.Fan_flowrates:
@@ -260,7 +270,7 @@ class odh_volume:
                                 O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
                                 #O2_conc = conc_final (self.volume, q_leak, Q_fan)
                                 F_i = self.fatality_prob(O2_conc)
-                                if P_i*F_i >= 1e-6/ureg.hr:
+                                if P_i*F_i >= 1e-8/ureg.hr:
                                     logger.info ('Source: '+source.name)
                                     logger.info ('Failure: '+key)
                                     logger.info ('Oxygen, percent of norm: {:.2%}'.format(O2_conc/0.21))
@@ -276,6 +286,19 @@ class odh_volume:
                             raise Exception ('Need to calculate ODH system failure probability first')
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
+
+    def source_safe(self, leak, escape = True):
+        '''
+        Estimate the impact of the Source vokume on oxygen concetration. Smaller sources might not be able to drop oxygen concentration to dangerous levels.
+        '''
+        (P_leak, q_leak, tau) = leak
+        V_inert = q_leak*tau #restoring the volume of the inert gas source
+        if escape == True: #if mixed air is allowed to escape within considered volume
+            O2_conc = 0.21*self.volume/(self.volume+V_inert)
+        else: #worst case; inert gas is trapped and expells the air outside the considered volume
+            O2_conc = 0.21*(1-V_inert/self.volume)
+        return self.fatality_prob(O2_conc) == 0
+
         
 
 
@@ -321,7 +344,7 @@ def to_standard_flow(flow_rate, Fluid_data):
             (x, M, D_fluid) = ht.rp_init(Fluid_data)
             q_std = flow_rate*D_fluid/D_NTP
         else:
-            logger.warning('Flow conditions are not set. Assuming standard flow at NTP')
+            logger.warning('Flow conditions for volumetric flow are not set. Assuming standard flow at NTP')
             q_std = flow_rate
     q_std.ito(ureg.ft**3/ureg.min)
     return q_std
