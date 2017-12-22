@@ -203,17 +203,21 @@ class odh_volume:
     def __str__ (self):
             return self.name
 
-    def fan_fail (self, Test_period, Mean_repair_time, Fail_rate, Q_fan, N_fans):
+    def fan_fail (self, Test_period, Fail_rate, Q_fan, N_fans, Mean_repair_time=0*ureg.hr):
         '''
         Calculate (Probability, flow) pairs for all combinations of fans working. All fans are expected to have same volume flow
         '''
         Fan_flowrates = []
         PFD_prev = 1
-        for m in range(N_fans, -1, -1):
-            PFD_fan = failure_on_demand(m, N_fans, Test_period, Mean_repair_time, Fail_rate) #Probability of failure if m units is required; Equivalent to 0..m units working
+        for m in range(N_fans, 0, -1):
+            PFD_fan = failure_on_demand(m, N_fans, Test_period, Fail_rate, Mean_repair_time) #Probability of failure if m units is required; Equivalent to 0..m units working
             PFD_m_fan_work = PFD_prev - PFD_fan #Probability exactly m fans work = P(0..m+1) - P(0..m) = PFD_prev-PFD_fan
             Fan_flowrates.insert(0, (PFD_m_fan_work, Q_fan*m))
             PFD_prev = PFD_fan
+        Fan_flowrates.insert(0, (PFD_fan, 0*ureg('ft^3/min'))) #last value, probability of system failure with only 1 required to work = probability of exactly 0 fans working
+        unity_check = sum([x for x,y in Fan_flowrates]) 
+        if unity_check != 1:
+            logger.debug('Unity check for fan probabilitiesfailed: {}'.format(unity_check))
         self.Fan_flowrates = Fan_flowrates
 
     def PFD_system (self, *PFDs):
@@ -243,23 +247,28 @@ class odh_volume:
         elif self.phi < 1e-3/ureg.hr:
             return 2
         else:
-            raise Exception ('ODH fatality rate is too high. Please, check calculations')
+            logger.error ('ODH fatality rate is too high. Please, check calculations')
 
 
-    def odh (self, Sources):
+    def odh (self, Sources, Power = True):
         '''
-        Calculate ODH fatality rate and recommend ODH class designation
+        Calculate ODH fatality rate and recommend ODH class designation.
+        Uses list of odh.source objects.
+        Power specifies whether there is a power outage. Default is no outage.
         '''
         self.phi = 0 #fatality rate
+        PFD_power_build = Power*PFD_power+(not Power)*1 #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
         for source in Sources: #Sources is a list of odh_source objects
+            if self.source_safe(source):
+                logger.info("{} doesn't contain enough gas to cause fatality in {}\n".format(source.name, self.name))
+                continue
+            PFD_sol_source = source.isol_valve*PFD_sol+(not source.isol_valve)*1 #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
             if source.fluid in self.Fluids:
                 for key in source.Leaks.keys():
                     (P_leak, q_leak, tau) = source.Leaks[key]
                     if hasattr(P_leak, 'dimensionality'):
-                        if source.isol_valve:
-                            P_i = P_leak*(PFD_power*PFD_sol+(1-PFD_power)*PFD_odh) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
-                        else:
-                            P_i = P_leak*self.PFD_system(PFD_power, PFD_sol) #power or ODH system failure: fans do not start
+                        P_i = P_leak*(PFD_power_build*PFD_sol_source+(1-PFD_power_build)*PFD_odh) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
+                        #The previous equation is equal to P_i = P_leak*self.PFD_system(PFD_power, PFD_sol) probability of power or ODH system failure: fans do not start
                         O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                         F_i = self.fatality_prob(O2_conc)
                         if P_i*F_i >= 1e-8/ureg.hr:
@@ -274,19 +283,12 @@ class odh_volume:
                             logger.info ('Fatality rate: {:.2~}\n'.format(P_i*F_i))
                         self.phi += P_i*F_i
                     else:
-                        logger.warning('Flat probability for event. The source will be analyzed for safety')
-                        if self.source_safe(source):
-                            logger.info("{} doesn't contain enough gas to cause fatality in {}".format(source.name, self.name))
-                            continue
-                        else:
-                            logger.error('The source contains dangerous amount of gas. Additional analysis is required')
-                            #TODO Constant leak analysis using HVAC ACH
+                        logger.error('The source contains dangerous amount of gas. Additional analysis is required')
+                        #TODO Constant leak analysis using HVAC ACH
                     if hasattr(self, 'Fan_flowrates'):
                         for (P_fan, Q_fan) in self.Fan_flowrates:
-                            if source.isol_valve:
-                                P_i = P_leak*(1-self.PFD_system(PFD_power, PFD_odh))*PFD_sol*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
-                            else:
-                                P_i = P_leak*(1-self.PFD_system(PFD_power, PFD_odh))*P_fan #Probability of leak occuring, ODH system/power working and m number of fans working
+                            P_i = P_leak*(1-self.PFD_system(PFD_power_build, PFD_odh))*PFD_sol_source*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
+                            #Above is equal to P_i = P_leak*(1-self.PFD_system(PFD_power, PFD_odh))*P_fan - Probability of leak occuring, ODH system/power working and m number of fans working
                             O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
                             #O2_conc = conc_final (self.volume, q_leak, Q_fan)
                             F_i = self.fatality_prob(O2_conc)
@@ -335,15 +337,20 @@ def limit_flow(flow, failure_mode):
     else:
         return flow
 
-def failure_on_demand (m, n, Test_period, Mean_repair_time, failure_rate):
+def failure_on_demand (m, n, T, l, MTTR=0*ureg.hr):
     '''
     Failure on demand probability
-    The definition in FESHM chapter (probability of m units out of n starting) is incorrect. Definition in D. Smoth's Reliability... is confusing.
+    The definition in FESHM chapter (probability of m units out of n starting) is incorrect. Definition in D. Smith's Reliability... is confusing.
     This value represents the probability of system failure if for normal functioning only m units out of n is required.
     1 - PFD gives the probability of at least m units out of n starting. That is usually not what required for ODH analysis. The workaround should be used.
+    inputs:
+        T - test period, hr
+        MTTR - mean repair time (when not negligible compared to test period), hr
+        l = lambda = failure rate for fan, 1/hr
     '''
-    MDT = Test_period/2+Mean_repair_time
-    PFD = ((MDT*failure_rate*m)**(n+1-m))/math.factorial(n+1-m)
+    #MDT = Test_period/2+Mean_repair_time
+    #PFD = ((MDT*failure_rate*m)**(n+1-m))/math.factorial(n+1-m) #This formula assumes standby mode, i.e. we start several fans and have a couple on standby. If one of the fans we requested doesn't start or breaks down - we start standby ones. That is not usually the case as we start all available fans
+    PFD = math.factorial(n)*(l*T)**(n-m+1)/(math.factorial(m-1)*math.factorial(n-m+2))*(1+(n-m+2)*MTTR/T) #Adapted formula from D. Smith's Reliability for unrevealed failures p. 108 to include repair time effect
     return PFD
 
 
@@ -498,7 +505,7 @@ if __name__ == "__main__":
     A = Q_(1550, ureg.square_feet) #IB1 floor area
     IB1_air = odh_volume('IB1 air', ['helium', 'nitrogen'], A*19.8*ureg.feet) #All IB1 air
 
-    IB1_air.fan_fail(Test_period, Mean_repair_time, l_vent, Q_fan, N_fans)
+    IB1_air.fan_fail(Test_period, l_vent, Q_fan, N_fans, Mean_repair_time)
     #print (IB1_air.Fan_flowrates)
     IB1_air.odh(odh_source.instances)
 
