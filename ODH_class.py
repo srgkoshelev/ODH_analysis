@@ -24,8 +24,9 @@ P_MSC = Q_(101325, ureg.Pa) #Metric Standard Conditions (used by Crane TP-410)
 
 #Probability of failure on demand for main cases
 PFD_power = 1e-4 #For some reason FESHM chapter lists 3e-4 as demand rate and 1e-4/hr failure rate + 1 hr time off. D. Smith's Reliability... states that PFD = lambda*MTD with lambda = 1e-4 1/hr and MDT = 1 hr gives 1e-4 value.
-Lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant leaks
-PFD_odh = 2e-3 #Conservative etimate; form CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
+lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant leaks
+PFD_odh = 2e-3 #Conservative etimate; from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
+lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 PFD_sol = 1e-3 #Solenoid valve, failure to operate; Used as failure to close when not powered (usually solenoids used for isolating the source)
 #System_fail_prob = [PFD_power, PFD_odh] #list of probabilities that may cause fan not to run (fan failures are calculated separately)
 #TODO Allow usage of different probabilities
@@ -219,8 +220,9 @@ class odh_volume:
         Fan_flowrates.insert(0, (PFD_fan, 0*ureg('ft^3/min'))) #last value, probability of system failure with only 1 required to work = probability of exactly 0 fans working
         unity_check = sum([x for x,y in Fan_flowrates]) 
         if unity_check != 1:
-            logger.debug('Unity check for fan probabilitiesfailed: {}'.format(unity_check))
+            logger.debug('Unity check for fan probabilities failed: {}'.format(unity_check))
         self.Fan_flowrates = Fan_flowrates
+        self.mdt = Test_period/(N_fans-1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
 
     def PFD_system (self, *PFDs):
         '''
@@ -265,7 +267,7 @@ class odh_volume:
                 continue
             if len (source.Leaks) == 0:
                 if self.source_safe(source):
-                    if Power:
+                    if Power: #to avoid excess output for power outage case
                         print ("{} doesn't contain enough gas to cause fatality in {}\n".format(source.name, self.name))
                     continue
                 else:
@@ -292,21 +294,31 @@ class odh_volume:
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
                 else:
-                    logger.warning("The source '{}' contains potentially dangerous amount of gas to cause fatality in {}. Additional analysis is required\n".format(source.name, self.name))
+                    #logger.warning("The source '{}' contains potentially dangerous amount of gas to cause fatality in {}. Additional analysis is required\n".format(source.name, self.name))
+                    #Assuming constant leak is small enough to be completely dominated by a single fan
+                    lambda_const = lambda_power + lambda_odh + self.Fan_flowrates[0][0]/self.mdt #Fan failure rate = PFD_0fans/MDT_fans
+                    P_i = lambda_const #Failure rate for protection against constant leak
+                    O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau)
+                    F_i = self.fatality_prob(O2_conc)
+                    self.phi += P_i*F_i
+                    self.info(source, 1e-7, 'Constant leak', 0, 'Constant', P_i, F_i, Power, q_leak, 0*ureg('ft^3/min'))
                     #TODO Constant leak analysis using HVAC ACH
 
     def info(self, source, sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak=None, Q_fan=None):
         phi = P_i*F_i
         if phi >= sens/ureg.hr and Power:
             print ('Major ODH cause with fatality rate > {:.2~}'.format(sens/ureg.hr))
-            print ('Volume: '+self.name)
+            print ('Volume: {}, {:.2~}'.format(self, self.volume.to(ureg.ft**3)))
             print ('Source: '+source.name)
             if q_leak and Q_fan:
                 print ('Failure: '+cause)
             else:
                 print ('Failure: '+cause+' and No power')
-            print ('Oxygen, percent of norm: {:.2%}'.format(O2_conc/0.21))
-            print ('Leak prob rate: {:.2~}'.format(P_leak))
+            print ('Oxygen concentration: {:.0%}, {:.0%} percent of norm'.format(O2_conc, O2_conc/0.21))
+            if type(P_leak) == str:
+                print ('Leak prob rate: {}'.format(P_leak))
+            else:
+                print ('Leak prob rate: {:.2~}'.format(P_leak))
             print ('System prob: {:.2%}'.format(P_i/P_leak))
             print ('Failure rate: {:.2~}'.format(P_i))
             if q_leak and Q_fan:
@@ -371,12 +383,12 @@ def to_standard_flow(flow_rate, Fluid_data):
     if flow_rate.dimensionality == ureg('kg/s').dimensionality: #mass flow, flow conditions are unnecessary
         q_std = flow_rate/(D_NTP*M)
     elif flow_rate.dimensionality == ureg('m^3/s').dimensionality: #volumetric flow given, converting to standard pressure and temperature
-        if Fluid_data.get('T_fluid') and Fluid_data.get('P_fluid'):
+        if 'T' in Fluid_data and 'P' in Fluid_data:
             (fluid, T_fluid, P_fluid) = ht.unpack_fluid(Fluid_data)
             (x, M, D_fluid) = ht.rp_init(Fluid_data)
             q_std = flow_rate*D_fluid/D_NTP
         else:
-            logger.warning('Flow conditions for volumetric flow are not set. Assuming standard flow at NTP')
+            logger.warning('Flow conditions for volumetric flow {:.3~} are not set. Assuming standard flow at NTP'.format(flow_rate))
             q_std = flow_rate
     q_std.ito(ureg.ft**3/ureg.min)
     return q_std
@@ -526,7 +538,7 @@ if __name__ == "__main__":
     Q_fan = 4000*ureg.ft**3/ureg.min #Flowrate of 4 ceiling fans is >= 4000 CFM; positive value refers to blowing into the building: FALSE IN CASE OF IB1!
     N_fans = 4
 
-    A = Q_(1550, ureg.square_feet) #IB1 floor area
+    A = Q_(15360, ureg.square_feet) #IB1 floor area
     IB1_air = odh_volume('IB1 air', ['helium', 'nitrogen'], A*19.8*ureg.feet) #All IB1 air
 
     IB1_air.fan_fail(Test_period, l_vent, Q_fan, N_fans, Mean_repair_time)
@@ -534,19 +546,28 @@ if __name__ == "__main__":
     IB1_air.odh()
 
     tau = list(range(math.ceil(266300*60/7750)))*ureg.s
-    Q = 16000*ureg('ft^3/min')
-    R = 1.1e4*ureg('ft^3/min')
-    V = 15500*19.8*ureg('ft^3')
-    C_in = []
-    C_out = []
-    for t in tau:
-        #C_in.append (conc_vent(V, R, Q, t))
-        C_out.append (1- conc_vent(V, R, -Q, t)/0.21)
-
-    plt.plot(tau.magnitude, C_out, label = 'Out')
-    #plt.plot(tau.magnitude, C_in, label = 'In')
-    plt.legend()
-    #plt.show()
+    Q = -16000*ureg('ft^3/min')
+    R =7750*ureg('ft^3/min')
+    tau = 266300*ureg.cubic_feet/R
+    H = 9.8*ureg.ft
+    V = H*A
+    C = conc_vent(V, R, Q, tau)
+    Test_vol = odh_volume ('Test', [],V)
+    print ('Volume: {:.0f}'.format(V.to(ureg.ft**3)))
+    print ('Oxygen concentration: {:.0%}'.format(C))
+    print ('Oxygen pressure: {:.0f}'.format(C/0.21*160)) 
+    print ('Fatality factor: {:.0g}'.format(Test_vol.fatality_prob(C)))
+    print ()
+#    C_in = []
+#    C_out = []
+#    for t in tau:
+#        #C_in.append (conc_vent(V, R, Q, t))
+#        C_out.append (1- conc_vent(V, R, -Q, t)/0.21)
+#
+#    plt.plot(tau.magnitude, C_out, label = 'Out')
+#    #plt.plot(tau.magnitude, C_in, label = 'In')
+#    plt.legend()
+#    #plt.show()
     print (to_standard_flow(6910*ureg('g/s'), {'fluid':'helium'}).to(ureg.ft**3/ureg.min))
 
 
