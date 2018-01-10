@@ -5,9 +5,9 @@ import math, sys, logging
 import matplotlib.pyplot as plt
 sys.path.append('D:/Personal/Python repo/')
 from heat_transfer import functions as ht
-from heat_transfer import piping as pipe
+from heat_transfer.piping import *
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 #Setting up the units
@@ -83,48 +83,46 @@ class odh_source:
         '''
         Helper function for different cases of gas pipe/weld leaks and ruptures
         '''
-        Pipe = failure_mode['Pipe']
+        pipe = failure_mode['Pipe']
         N_welds = failure_mode.get('N_welds')
         Area = None
         if cause == 'small leak':
-            cause = 'small leak ' + str(pipe.D_pipe(Pipe))
-            Prob = 10**(-9)/(ureg.m*ureg.hr)*Pipe['L'] 
+            cause = 'small leak ' + str(pipe.D)
+            Prob = 10**(-9)/(ureg.m*ureg.hr)*pipe.L
             Area = 10*ureg.mm**2
-        elif cause == 'large leak':
-            if pipe.D_pipe(Pipe) > 2:
-                cause = 'large leak ' + str(pipe.D_pipe(Pipe))
-                Prob = 10**(-10)/(ureg.m*ureg.hr)*Pipe['L'] 
-                Area = 1000*ureg.mm**2
+        elif cause == 'large leak' and pipe.D > 2:
+            cause = 'large leak ' + str(pipe.D)
+            Prob = 10**(-10)/(ureg.m*ureg.hr)*pipe.L
+            Area = 1000*ureg.mm**2
         elif cause == 'rupture':
-            cause = 'rupture ' + str(pipe.D_pipe(Pipe))
-            Prob = 3*10**(-11)/(ureg.m*ureg.hr)*Pipe['L'] 
-            Area = pipe.Area(Pipe)
+            cause = 'rupture ' + str(pipe.D)
+            Prob = 3*10**(-11)/(ureg.m*ureg.hr)*pipe.L
+            Area = pipe.Area()
         elif cause == 'weld small leak':
-            cause = 'weld small leak ' + str(pipe.D_pipe(Pipe))
-            Prob = N_welds*2*10**(-11)/(ureg.hr)*pipe.OD(Pipe)/pipe.wall(Pipe) 
+            cause = 'weld small leak ' + str(pipe.D)
+            Prob = N_welds*2*10**(-11)/(ureg.hr)*pipe.OD()/pipe.wall() 
             Area = 10*ureg.mm**2
-        elif cause == 'weld large leak':
-            if pipe.D_pipe(Pipe) > 2:
-                cause = 'weld large leak ' + str(pipe.D_pipe(Pipe))
-                N_welds = failure_mode['N_welds']
-                Prob = N_welds*2*10**(-12)/(ureg.hr)*pipe.OD(Pipe)/pipe.wall(Pipe)
-                Area = 1000*ureg.mm**2
+        elif cause == 'weld large leak' and pipe.D > 2:
+            cause = 'weld large leak ' + str(pipe.D)
+            N_welds = failure_mode['N_welds']
+            Prob = N_welds*2*10**(-12)/(ureg.hr)*pipe.OD()/pipe.wall()
+            Area = 1000*ureg.mm**2
         elif cause == 'weld rupture':
-            cause = 'weld rupture ' + str(pipe.D_pipe(Pipe))
-            Prob = N_welds*6*10**(-13)/(ureg.hr)*pipe.OD(Pipe)/pipe.wall(Pipe) 
-            Area = pipe.Area(Pipe)
+            cause = 'weld rupture ' + str(pipe.D)
+            Prob = N_welds*6*10**(-13)/(ureg.hr)*pipe.OD()/pipe.wall() 
+            Area = pipe.Area()
         else: 
             logger.warning ('Gas pipe failure cause is not recognized!:{}'.format(cause))
 
         if Area:
-            q_std = limit_flow(leak_flow(failure_mode['Fluid_data'],  Area), failure_mode)
+            q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
             Prob *= Fs_gas #Including safety factor due to uncertainty in piping length/weld number estimation
             Prob.ito(1/ureg.hr)
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
 
-    def leak (self, failure_mode = {'mode': 'gas line', 'Pipe':{'L':10*ureg.m, 'D_nom':3*ureg.inch, 'SCH':5}, 'Fluid_data': {'P':2.33*ureg('bar'), 'T':Q_(40,ureg.degC)}, 'max_flow':0.01*ureg('m^3/s')}):
+    def leak (self, failure_mode = {'mode': 'gas line', 'Pipe':Pipe(3, 5, 10*ureg.m), 'Fluid_data': {'P':2.33*ureg('bar'), 'T':Q_(40,ureg.degC)}, 'max_flow':0.01*ureg('m^3/s')}):
         '''Calculating leak and probability for different cases of equipment failure
         '''
         Fluid_data = failure_mode.get('Fluid_data')
@@ -135,26 +133,27 @@ class odh_source:
         else:
             Fluid_data = {'fluid':self.fluid}
         failure_mode['Fluid_data'] = Fluid_data
-        Pipe = failure_mode.get('Pipe')
+        pipe = failure_mode.get('Pipe')
 
         if failure_mode['mode'] == 'gas line':
-            Causes = ['small leak', 'large leak', 'rupture', 'weld small leak', 'weld large leak', 'weld rupture']
+            #Causes = ['small leak', 'large leak', 'rupture', 'weld small leak', 'weld large leak', 'weld rupture']
+            Causes = ['small leak']
             for cause in Causes:
                 self.calculate_gas_leak(cause, failure_mode)
 
         elif failure_mode['mode'] == 'fluid line':
             cause = 'fluid line leak'
-            N_lines = failure_mode['N_lines']
+            N_lines = failure_mode['N_lines'] #For multiple tranfer lines/U-tubes used the min length of pipe should be used
             Prob = N_lines*5*10**(-7)/(ureg.hr) #Probaility and flow will be recalculated for each cause using the same variable names
             Prob.ito(1/ureg.hr)
-            q_std = limit_flow(leak_flow(Fluid_data,  10*ureg.mm**2), failure_mode)
+            q_std = self.leak_flow(failure_mode,  10*ureg.mm**2)
             tau = self.volume/q_std
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
             cause = 'fluid line rupture'
             Prob = N_lines*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
             Prob.ito(1/ureg.hr)
-            q_std = limit_flow(leak_flow(Fluid_data,  pipe.Area(Pipe)), failure_mode)
+            q_std = self.leak_flow(failure_mode, pipe.Area())
             tau = self.volume/q_std
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
@@ -162,7 +161,7 @@ class odh_source:
             cause = 'loss of vacuum to air'
             Prob = 4*10**(-6)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
             Prob.ito(1/ureg.hr)
-            q_std = limit_flow(failure_mode['q_relief'], failure_mode)
+            q_std = self.limit_flow(failure_mode['q_relief'], failure_mode)
             tau = self.volume/q_std
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
@@ -174,7 +173,7 @@ class odh_source:
             else:
                 Prob_total = Prob*failure_mode.get('N', 1) #Total probability of failure
                 Prob.ito(1/ureg.hr)
-            q_std = limit_flow(failure_mode['q'], failure_mode)
+            q_std = self.limit_flow(failure_mode['q'], failure_mode)
             tau = self.volume/q_std
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
@@ -182,6 +181,32 @@ class odh_source:
             raise  ValueError ('Mode is not supported: %r. Try "gas line", "fluid line", "dewar" or "other".', failure_mode['mode'])
 
         return self.Leaks
+
+    def leak_flow(self, failure_mode, Area):
+        d = (4*Area/math.pi)**0.5 #diameter for the leak openning
+        pipe = failure_mode['Pipe'] #For fluid line whole length is affecting the flow; the length should be to the nearest bayonet from the source
+        if failure_mode['mode'] == 'gas line':
+            pipe.L = pipe.L/2 #Average path for the flow will be half of piping length for gas piping
+        openning = Openning(d)
+        piping = Piping(pipe, failure_mode['Fluid_data'])
+        piping.add(openning)
+        m_dot = piping.m_dot(P_NTP)
+        return self.limit_flow(m_dot, failure_mode)
+
+    def limit_flow(self, flow, failure_mode):
+        '''
+        Leak through the openning sometimes cannot be larger than a certain number, e.g. a compressor throughput. This function limits flow to this value if it exists.
+        Max flow should be specified for flowing conditions (Fluid_data).
+        Additionally converts the flow to standard conditions (required for comparison).
+        '''
+        max_flow = failure_mode.get('max_flow')
+        #logger.debug('Failure mode: {} Flow: {:.3~}, STD flow: {:.3~}'.format(failure_mode.get('cause', failure_mode['mode']), flow, to_standard_flow(flow, failure_mode['Fluid_data']) ))
+        flow = to_standard_flow(flow, failure_mode['Fluid_data'])
+        if max_flow:
+            max_flow = to_standard_flow(max_flow, failure_mode['Fluid_data']) #converting max_flow to standard volumetric flow  
+            return min (flow, max_flow)
+        else:
+            return flow
 
     def print_leaks (self):
         for key in sorted(self.Leaks.keys()):
@@ -260,6 +285,7 @@ class odh_volume:
         Uses list of odh.source instances.
         Power specifies whether there is a power outage. Default is no outage.
         '''
+        show_sens = 1e-7
         self.phi = 0 #fatality rate
         PFD_power_build = Power*PFD_power+(not Power)*1 #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
         for source in odh_source.instances: #Sources is a list of odh_source objects
@@ -281,7 +307,7 @@ class odh_volume:
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
-                    self.info(source, 1e-7, cause, O2_conc, P_leak, P_i, F_i, Power)
+                    self.info(source, show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak)
                     if hasattr(self, 'Fan_flowrates'):
                         for (P_fan, Q_fan) in self.Fan_flowrates:
                             P_i = P_leak*(1-self.PFD_system(PFD_power_build, PFD_odh))*PFD_sol_source*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
@@ -290,7 +316,7 @@ class odh_volume:
                             #O2_conc = conc_final (self.volume, q_leak, Q_fan)
                             F_i = self.fatality_prob(O2_conc)
                             self.phi += P_i*F_i
-                            self.info(source, 1e-7, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan)
+                            self.info(source, show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan)
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
                 else:
@@ -301,10 +327,10 @@ class odh_volume:
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau)
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
-                    self.info(source, 1e-7, 'Constant leak', 0, 'Constant', P_i, F_i, Power, q_leak, 0*ureg('ft^3/min'))
+                    self.info(source, show_sens, 'Constant leak', 0, 'Constant', P_i, F_i, Power, q_leak, 0*ureg('ft^3/min'))
                     #TODO Constant leak analysis using HVAC ACH
 
-    def info(self, source, sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak=None, Q_fan=None):
+    def info(self, source, sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan=None):
         phi = P_i*F_i
         if phi >= sens/ureg.hr and Power:
             print ('Major ODH cause with fatality rate > {:.2~}'.format(sens/ureg.hr))
@@ -321,8 +347,8 @@ class odh_volume:
                 print ('Leak prob rate: {:.2~}'.format(P_leak))
             print ('System prob: {:.2%}'.format(P_i/P_leak))
             print ('Failure rate: {:.2~}'.format(P_i))
-            if q_leak and Q_fan:
-                print ('Leak rate: {:.2~}'.format(q_leak))
+            print ('Leak rate: {:.2~}'.format(q_leak))
+            if Q_fan:
                 print ('Fan rate: {:.2~}'.format(Q_fan))
             print ('Fatality prob: {:.2g}'.format(F_i))
             print ('Fatality rate: {:.2~}\n'.format(P_i*F_i))
@@ -342,21 +368,6 @@ class odh_volume:
 
 
 
-def limit_flow(flow, failure_mode):
-    '''
-    Leak through the openning sometimes cannot be larger than a certain number, e.g. a compressor throughput. This function limits flow to this value if it exists.
-    Max flow should be specified for flowing conditions (Fluid_data).
-    Additionally converts the flow to standard conditions (required for comparison).
-    '''
-    max_flow = failure_mode.get('max_flow')
-    #logger.debug('Failure mode: {} Flow: {:.3~}, STD flow: {:.3~}'.format(failure_mode.get('cause', failure_mode['mode']), flow, to_standard_flow(flow, failure_mode['Fluid_data']) ))
-    flow = to_standard_flow(flow, failure_mode['Fluid_data'])
-    if max_flow:
-        max_flow = to_standard_flow(max_flow, failure_mode['Fluid_data']) #converting max_flow to standard volumetric flow  
-        return min (flow, max_flow)
-    else:
-        return flow
-
 def failure_on_demand (m, n, T, l, MTTR=0*ureg.hr):
     '''
     Failure on demand probability
@@ -372,8 +383,6 @@ def failure_on_demand (m, n, T, l, MTTR=0*ureg.hr):
     #PFD = ((MDT*failure_rate*m)**(n+1-m))/math.factorial(n+1-m) #This formula assumes standby mode, i.e. we start several fans and have a couple on standby. If one of the fans we requested doesn't start or breaks down - we start standby ones. That is not usually the case as we start all available fans
     PFD = math.factorial(n)*(l*T)**(n-m+1)/(math.factorial(m-1)*math.factorial(n-m+2))*(1+(n-m+2)*MTTR/T) #Adapted formula from D. Smith's Reliability for unrevealed failures p. 108 to include repair time effect
     return PFD
-
-
 
 def to_standard_flow(flow_rate, Fluid_data):
     '''
@@ -392,53 +401,6 @@ def to_standard_flow(flow_rate, Fluid_data):
             q_std = flow_rate
     q_std.ito(ureg.ft**3/ureg.min)
     return q_std
-
-
-
-def leak_flow (Fluid_data = {'fluid':'air', 'P':2.33*ureg('bar'), 'T':Q_(40,ureg.degC)}, A = 10*ureg('mm**2')):
-    d = (4*A/math.pi)**0.5
-    Y = 1 #conservative value; from Crane TP-410 A-21
-    C = 0.7 #conservative value; from Crane TP-410 A-20 
-    (fluid, T_fluid, P_fluid) = ht.unpack_fluid(Fluid_data)
-    (x, M, D_fluid) = ht.rp_init(Fluid_data)
-    rho = D_fluid*M
-    k = ht.gamma(Fluid_data) #adiabatic coefficient
-    rc = (2/(k+1))**(k/(k-1)) #Critical pressure drop; Note: according to Crane TP-410 is depndent on the hydraulic resistance of the flow path
-    if P_MSC > P_fluid*rc: #subsonic flow
-        DeltaP = P_fluid - P_MSC
-    else: #Sonic flow
-        DeltaP = P_fluid*(1-rc) #Crane TP-410, p 2-15
-    quality = ht.flsh('TP', T_fluid, P_fluid, x)['q']
-    if quality >= 1:
-        g = orifice_flow_gas(Y, d, C, DeltaP, rho)
-    else:
-        g = orifice_flow_liquid(d, C, DeltaP, rho) #Calculating liquid flow through the opening. Assuming no evaporation happens
-
-    return g
-
-def orifice_flow_gas (Y, d, C, DeltaP, rho):
-    '''Wrapper function for flow through orifice equation.
-    Original formula in crane uses a non-dimensionless coefficient 0.0003512 and non-SI units for values in formulas so straightforward approach is complicated.
-    '''
-    d_1 = d.to(ureg.mm).magnitude #diameter in mm
-    Deltap = DeltaP.to(ureg.bar).magnitude #Pressure drop in bar
-    rho_1 = rho.to(ureg.kg/ureg.m**3).magnitude #Density of inflow in kg/m^3
-    g = 0.0003512*Y*d_1**2*C*(Deltap*rho_1)**0.5 #mass flow through the orifice in kg/s; Crane TP-410, Eq.3-22
-    g = g*ureg('kg/s')
-    return g
-
-
-def orifice_flow_liquid (d, C, DeltaP, rho):
-    '''Wrapper function for flow through orifice equation.
-    Original formula in crane uses a non-dimensionless coefficient 0.0003512 and non-SI units for values in formulas so straightforward approach is complicated.
-    '''
-    d_1 = d.to(ureg.mm).magnitude #diameter in mm
-    Deltap = DeltaP.to(ureg.bar).magnitude #Pressure drop in bar
-    rho_1 = rho.to(ureg.kg/ureg.m**3).magnitude #Density of inflow in kg/m^3
-    g = 0.0003512*d_1**2*C*(Deltap*rho_1)**0.5 #mass flow through the orifice in kg/s; Crane TP-410, Eq.3-21
-    g = g*ureg('kg/s')
-    return g
-
 
 def conc_vent (V, R, Q, t):
     #V - volume of the confined space (ft3 or m3)
@@ -487,18 +449,18 @@ def conc_after (V, C_e, Q, t, t_e):
 
 
 #Printing results - may be moved elsewhere later
-def print_result(*Sources):
+def print_result(*Volumes):
     '''
     Print the results of the ODH analysis for a volume. If several volumes given (in case of interlapping volumes) the worst case will be printed.
     '''
-    max_phi = 0/ureg.hr
-    for source in Sources:
-        if source.phi > max_phi:
-            max_source = source
+    max_phi = -1/ureg.hr
+    for volume in Volumes:
+        if volume.phi > max_phi:
+            max_volume = volume
 
     print ('#'*30)
-    print ('Fatality rate for {} is {:.1e}'.format(max_source, source.phi))
-    print ('Recommended ODH class {}'.format(max_source.odh_class()))
+    print ('Fatality rate for {} is {:.1e}'.format(max_volume, volume.phi))
+    print ('Recommended ODH class {}'.format(max_volume.odh_class()))
     print ('#'*30)
 
 
@@ -514,15 +476,24 @@ def print_result(*Sources):
 if __name__ == "__main__":
     #Adding the inert gas sources
 
-    He_storage_dewar_gas = odh_source('Storage dewar', 'helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
+    He_storage_dewar_gas = odh_source('Storage dewar', 'helium', Q_(3390000, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
     Test = odh_source('Test', 'helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
     Test_2 = Test+Test+Test
     odh_source.delete()
 
-    He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':4, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 285*ureg.psig, 'T':300*ureg.K}, 'max_flow':211*ureg('g/s')}) #Supply to Cold Box; Max flow is taken as Sullair max capacity at discharge
-    He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':6, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 35*ureg.psig, 'T':300*ureg.K}, 'max_flow':108*ureg('g/s')}) #Mid stage; Max flow is taken as midstage return from cryoplant
-    He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':{'D_nom':8, 'SCH':5, 'L':35*ureg.ft}, 'N_welds':10, 'Fluid_data':{'P': 16.5*ureg.psig, 'T':300*ureg.K}, 'max_flow':100*ureg('g/s')}) #Return (suction); Max flow is taken from Mycom room ODH analysis as Total supply rate to suction piping
+    #He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':Pipe(4, 5,35*ureg.ft), 'N_welds':10, 'Fluid_data':{'P': 285*ureg.psig, 'T':300*ureg.K}, 'max_flow':211*ureg('g/s')}) #Supply to Cold Box; Max flow is taken as Sullair max capacity at discharge
+    He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':Tube(6*ureg.inch, 0.15*ureg.inch, 350000*ureg.ft), 'N_welds':10, 'Fluid_data':{'P': 95*ureg.psig, 'T':300*ureg.K}, 'max_flow':108*ureg('g/s')}) #Mid stage; Max flow is taken as midstage return from cryoplant
+    #He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':Pipe(8, 5, 35*ureg.ft), 'N_welds':10, 'Fluid_data':{'P': 16.5*ureg.psig, 'T':300*ureg.K}, 'max_flow':100*ureg('g/s')}) #Return (suction); Max flow is taken from Mycom room ODH analysis as Total supply rate to suction piping
+    Test_pipe = Tube(1*ureg.inch, 0.035*ureg.inch, 20*ureg.ft)
+    Test_piping = Piping(Test_pipe, {'fluid':'helium', 'P':12*ureg.psig, 'T':5*ureg.K})
+    print(Test_piping.m_dot().to(ureg.g/ureg.s))
+    print(Test_piping.dP(607*ureg('g/s')))
 
+#    print ('\n'*3)
+#    d = 3.57*ureg.mm
+#    print(dP_openning(9.7*ureg('g/s'), Openning(d), {'fluid':'helium', 'P': 95*ureg.psig, 'T':300*ureg.K}))
+#    print(dP_openning(12.6*ureg('g/s'), Openning(d), {'fluid':'helium', 'P': 95*ureg.psig, 'T':300*ureg.K}))
+#    print ('\n'*3)
 
     #for source in odh_source.instances:
     #    print (source.volume)
@@ -544,6 +515,7 @@ if __name__ == "__main__":
     IB1_air.fan_fail(Test_period, l_vent, Q_fan, N_fans, Mean_repair_time)
     #print (IB1_air.Fan_flowrates)
     IB1_air.odh()
+    print_result(IB1_air)
 
     tau = list(range(math.ceil(266300*60/7750)))*ureg.s
     Q = -16000*ureg('ft^3/min')
@@ -557,42 +529,3 @@ if __name__ == "__main__":
     print ('Oxygen concentration: {:.0%}'.format(C))
     print ('Oxygen pressure: {:.0f}'.format(C/0.21*160)) 
     print ('Fatality factor: {:.0g}'.format(Test_vol.fatality_prob(C)))
-    print ()
-#    C_in = []
-#    C_out = []
-#    for t in tau:
-#        #C_in.append (conc_vent(V, R, Q, t))
-#        C_out.append (1- conc_vent(V, R, -Q, t)/0.21)
-#
-#    plt.plot(tau.magnitude, C_out, label = 'Out')
-#    #plt.plot(tau.magnitude, C_in, label = 'In')
-#    plt.legend()
-#    #plt.show()
-    print (to_standard_flow(6910*ureg('g/s'), {'fluid':'helium'}).to(ureg.ft**3/ureg.min))
-
-
-
-
-    #def fan_fail (Test_period, Mean_repair_time, Fail_rate, Q_fan, N_fans):
-
-
-    #if self.fluid == 'helium':
-    #    V_effect = [A*h for h in He_height]
-    #elif self.fluid == 'nitrogen':
-    #    V_effect = [A*N2_height] #Volume affected by inert gas
-
-    #def safe (self, escape = True): #move into calculation part - it's a single case things
-    #    A = Q_(1550, ureg.square_feet) #IB1 floor area
-    #    He_height = [3.3, 9.8, 19.8]*ureg.feet
-    #    N2_height = 0.6*ureg.m #height of a sitting person
-    #    if self.fluid == 'helium':
-    #        V_effect = [A*h for h in He_height]
-    #    elif self.fluid == 'nitrogen':
-    #        V_effect = [A*N2_height] #Volume affected by inert gas
-    #    if escape == True: #if mixed air is allowed to escape within considered volume
-    #        O2_conc = [0.21*V/(V+self.volume) for V in V_effect]
-    #    else: #worst case; inert gas is trapped and expells the air outside the considered volume
-    #        O2_conc = [0.21*(1-self.volume/V) for V in V_effect]
-    #    #print ( [self.fatality_prob(conc) == 0 for conc in O2_conc])
-    #    return all([self.Q_fafatality_probn(conc) == 0 for conc in O2_conc])
-
