@@ -28,7 +28,6 @@ lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant le
 PFD_odh = 2e-3 #Conservative etimate; from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 PFD_sol = 1e-3 #Solenoid valve, failure to operate; Used as failure to close when not powered (usually solenoids used for isolating the source)
-#System_fail_prob = [PFD_power, PFD_odh] #list of probabilities that may cause fan not to run (fan failures are calculated separately)
 #TODO Allow usage of different probabilities
 
 #Gas pipe safety factor
@@ -48,11 +47,10 @@ class odh_source:
         elif phase == 'liquid':
             Fluid_data = ht.pack_fluid(fluid, T_NTP, P_NTP) #standard conditions
             (x, M, D_fluid_std) = ht.rp_init(Fluid_data)
-            satur = ht.satp(101325*ureg.Pa, x)
-            #D_fluid_sat = Q_(satur ['Dliq'], ureg('mol/L'))
+            satur = ht.satp(P_NTP, x) #assuming incompressible liquid
             D_fluid_sat = satur ['Dliq']*ureg('mol/L')
             self.volume = Volume*D_fluid_sat/D_fluid_std
-        self.volume.ito(ureg('ft**3'))
+        self.volume.ito(ureg.feet**3)
         self.isol_valve = False #Shows if there is an isolation valve that is used by ODH system
 
     def __add__ (self, other):
@@ -67,7 +65,6 @@ class odh_source:
             return self.name
         else:
             return ''
-
 
     def print (self):
         if self.name:
@@ -85,41 +82,36 @@ class odh_source:
         '''
         pipe = failure_mode['Pipe']
         N_welds = failure_mode.get('N_welds')
-        Area = None
-        if cause == 'small leak':
-            cause = 'small leak ' + str(pipe.D)
-            Prob = 10**(-9)/(ureg.m*ureg.hr)*pipe.L
+        if 'large' in cause and pipe.D<=2:
+            return
+        cause += ' {}'.format(str(pipe.D))
+        Prob = pipe.L/(ureg.m*ureg.hr)
+        if 'small' in cause:
             Area = 10*ureg.mm**2
-        elif cause == 'large leak' and pipe.D > 2:
-            cause = 'large leak ' + str(pipe.D)
-            Prob = 10**(-10)/(ureg.m*ureg.hr)*pipe.L
+            Prob *= 1e-9
+        elif 'large' in cause:
             Area = 1000*ureg.mm**2
-        elif cause == 'rupture':
-            cause = 'rupture ' + str(pipe.D)
-            Prob = 3*10**(-11)/(ureg.m*ureg.hr)*pipe.L
+            Prob *= 1e-10
+        elif 'rupture' in cause:
             Area = pipe.Area()
-        elif cause == 'weld small leak':
-            cause = 'weld small leak ' + str(pipe.D)
-            Prob = N_welds*2*10**(-11)/(ureg.hr)*pipe.OD()/pipe.wall() 
-            Area = 10*ureg.mm**2
-        elif cause == 'weld large leak' and pipe.D > 2:
-            cause = 'weld large leak ' + str(pipe.D)
-            N_welds = failure_mode['N_welds']
-            Prob = N_welds*2*10**(-12)/(ureg.hr)*pipe.OD()/pipe.wall()
-            Area = 1000*ureg.mm**2
-        elif cause == 'weld rupture':
-            cause = 'weld rupture ' + str(pipe.D)
-            Prob = N_welds*6*10**(-13)/(ureg.hr)*pipe.OD()/pipe.wall() 
-            Area = pipe.Area()
+            Prob *= 3e-11
         else: 
-            logger.warning ('Gas pipe failure cause is not recognized!:{}'.format(cause))
+            logger.error ('Gas pipe failure cause is not recognized!:{}'.format(cause))
 
-        if Area:
-            q_std = self.leak_flow(failure_mode, Area)
-            tau = self.volume/q_std
-            Prob *= Fs_gas #Including safety factor due to uncertainty in piping length/weld number estimation
-            Prob.ito(1/ureg.hr)
-            self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
+        if 'weld' in cause:
+            Prob = N_welds*pipe.OD()/(pipe.wall()*ureg.hr)
+            if 'small' in cause:
+                Prob *= 2e-11
+            elif 'large' in cause:
+                Prob *= 2e-12
+            elif 'rupture' in cause:
+                Prob *= 6e-13
+
+        q_std = self.leak_flow(failure_mode, Area)
+        tau = self.volume/q_std
+        Prob *= Fs_gas #Including safety factor due to uncertainty in piping length/weld number estimation
+        Prob.ito(1/ureg.hr)
+        self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
 
     def leak (self, failure_mode = {'mode': 'gas line', 'Pipe':Pipe(3, 5, 10*ureg.m), 'Fluid_data': {'P':2.33*ureg('bar'), 'T':Q_(40,ureg.degC)}, 'max_flow':0.01*ureg('m^3/s')}):
@@ -136,43 +128,41 @@ class odh_source:
         pipe = failure_mode.get('Pipe')
 
         if failure_mode['mode'] == 'gas line':
-            #Causes = ['small leak', 'large leak', 'rupture', 'weld small leak', 'weld large leak', 'weld rupture']
-            Causes = ['small leak']
+            Causes = ['small leak', 'large leak', 'rupture', 'weld small leak', 'weld large leak', 'weld rupture']
             for cause in Causes:
                 self.calculate_gas_leak(cause, failure_mode)
 
         elif failure_mode['mode'] == 'fluid line':
-            cause = 'fluid line leak'
             N_lines = failure_mode['N_lines'] #For multiple tranfer lines/U-tubes used the min length of pipe should be used
-            Prob = N_lines*5*10**(-7)/(ureg.hr) #Probaility and flow will be recalculated for each cause using the same variable names
-            Prob.ito(1/ureg.hr)
-            q_std = self.leak_flow(failure_mode,  10*ureg.mm**2)
+            for cause in ['fluid line leak', 'fluid line rupture']:
+                if 'leak' in cause:
+                    Prob = N_lines*5*10**(-7)/(ureg.hr) #Probaility and flow will be recalculated for each cause using the same variable names
+                    Area = 10*ureg.mm**2
+                else:
+                    Prob = N_lines*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
+                    Area = pipe.Area()
+            q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
-            self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
-
-            cause = 'fluid line rupture'
-            Prob = N_lines*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
             Prob.ito(1/ureg.hr)
-            q_std = self.leak_flow(failure_mode, pipe.Area())
-            tau = self.volume/q_std
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
         elif failure_mode['mode'] == 'dewar':
             cause = 'loss of vacuum to air'
             Prob = 4*10**(-6)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
-            Prob.ito(1/ureg.hr)
             q_std = self.limit_flow(failure_mode['q_relief'], failure_mode)
             tau = self.volume/q_std
+            Prob.ito(1/ureg.hr)
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
         elif failure_mode['mode'] == 'other':
             cause = failure_mode['cause']
             Prob = failure_mode['Prob'] #Probability of a single failure
-            if Prob == 1:
-                Prob_total = 1
-            else:
-                Prob_total = Prob*failure_mode.get('N', 1) #Total probability of failure
+            Prob_total = Prob*failure_mode.get('N', 1) #Total probability of failure
+            try:
                 Prob.ito(1/ureg.hr)
+            except AttributeError:
+                if Prob != 1:
+                    logger.error('Flat probability not equal to 1 (constant leak) is used: {}'.format(Prob))
             q_std = self.limit_flow(failure_mode['q'], failure_mode)
             tau = self.volume/q_std
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
@@ -225,7 +215,7 @@ class odh_volume:
     '''
     def __init__  (self, name, Fluids, volume):
         self.name = name
-        self.Fluids = Fluids
+        self.Fluids = Fluids #For gas stratification gases that affect the layer
         self.volume = volume
 
     def __str__ (self):
@@ -245,14 +235,13 @@ class odh_volume:
         Fan_flowrates.insert(0, (PFD_fan, 0*ureg('ft^3/min'))) #last value, probability of system failure with only 1 required to work = probability of exactly 0 fans working
         unity_check = sum([x for x,y in Fan_flowrates]) 
         if unity_check != 1:
-            logger.debug('Unity check for fan probabilities failed: {}'.format(unity_check))
+            logger.error('Unity check for fan probabilities failed: {}'.format(unity_check))
         self.Fan_flowrates = Fan_flowrates
         self.mdt = Test_period/(N_fans-1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
 
     def PFD_system (self, *PFDs):
         '''
         Calculate total probability of an ODH system failure for given probabilities of different element failures.
-        In most cases those probabilities are not mutually exclusive and cannot be added directly. Fortunately, the non-failure events are indepent
         '''
         PFD_system_on = 1
         for PFD in PFDs:
@@ -303,7 +292,7 @@ class odh_volume:
                 (P_leak, q_leak, tau) = leak
                 if hasattr(P_leak, 'dimensionality'):
                     P_i = P_leak*(PFD_power_build*PFD_sol_source+(1-PFD_power_build)*PFD_odh) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
-                    #The previous equation is equal to P_i = P_leak*self.PFD_system(PFD_power, PFD_sol) probability of power or ODH system failure: fans do not start
+                    #The previous equation is equal to P_i = P_leak*self.PFD_system(PFD_power, PFD_odh) probability of power or ODH system failure: fans do not start
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
@@ -313,14 +302,12 @@ class odh_volume:
                             P_i = P_leak*(1-self.PFD_system(PFD_power_build, PFD_odh))*PFD_sol_source*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
                             #Above is equal to P_i = P_leak*(1-self.PFD_system(PFD_power, PFD_odh))*P_fan - Probability of leak occuring, ODH system/power working and m number of fans working
                             O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
-                            #O2_conc = conc_final (self.volume, q_leak, Q_fan)
                             F_i = self.fatality_prob(O2_conc)
                             self.phi += P_i*F_i
                             self.info(source, show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan)
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
                 else:
-                    #logger.warning("The source '{}' contains potentially dangerous amount of gas to cause fatality in {}. Additional analysis is required\n".format(source.name, self.name))
                     #Assuming constant leak is small enough to be completely dominated by a single fan
                     lambda_const = lambda_power + lambda_odh + self.Fan_flowrates[0][0]/self.mdt #Fan failure rate = PFD_0fans/MDT_fans
                     P_i = lambda_const #Failure rate for protection against constant leak
@@ -379,8 +366,6 @@ def failure_on_demand (m, n, T, l, MTTR=0*ureg.hr):
         MTTR - mean repair time (when not negligible compared to test period), hr
         l = lambda = failure rate for fan, 1/hr
     '''
-    #MDT = Test_period/2+Mean_repair_time
-    #PFD = ((MDT*failure_rate*m)**(n+1-m))/math.factorial(n+1-m) #This formula assumes standby mode, i.e. we start several fans and have a couple on standby. If one of the fans we requested doesn't start or breaks down - we start standby ones. That is not usually the case as we start all available fans
     PFD = math.factorial(n)*(l*T)**(n-m+1)/(math.factorial(m-1)*math.factorial(n-m+2))*(1+(n-m+2)*MTTR/T) #Adapted formula from D. Smith's Reliability for unrevealed failures p. 108 to include repair time effect
     return PFD
 
@@ -457,11 +442,13 @@ def print_result(*Volumes):
     for volume in Volumes:
         if volume.phi > max_phi:
             max_volume = volume
-
-    print ('#'*30)
-    print ('Fatality rate for {} is {:.1e}'.format(max_volume, volume.phi))
-    print ('Recommended ODH class {}'.format(max_volume.odh_class()))
-    print ('#'*30)
+    line_1 = '# Fatality rate for {} is {:.1e} #'.format(max_volume, volume.phi)
+    pad = len(line_1)
+    line_2 = '# Recommended ODH class {}'.format(max_volume.odh_class()).ljust(pad-1)+'#'
+    print ('#'*pad)
+    print (line_1)
+    print (line_2)
+    print ('#'*pad)
 
 
 
