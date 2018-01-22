@@ -2,7 +2,6 @@
 #Defining base classes for ODH analysis
 
 import math, sys, logging
-import matplotlib.pyplot as plt
 sys.path.append('D:/Personal/Python repo/')
 from heat_transfer import functions as ht
 from heat_transfer.piping import *
@@ -28,7 +27,6 @@ lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant le
 PFD_odh = 2e-3 #Conservative etimate; from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 PFD_sol = 1e-3 #Solenoid valve, failure to operate; Used as failure to close when not powered (usually solenoids used for isolating the source)
-#TODO Allow usage of different probabilities
 
 #Gas pipe safety factor
 Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and number of welds. Unfortunately both values are hard to estimate accurately thus a safety factor is used
@@ -93,13 +91,13 @@ class odh_source:
             Area = 1000*ureg.mm**2
             Prob *= 1e-10
         elif 'rupture' in cause:
-            Area = pipe.Area()
+            Area = pipe.Area
             Prob *= 3e-11
         else: 
             logger.error ('Gas pipe failure cause is not recognized!:{}'.format(cause))
 
         if 'weld' in cause:
-            Prob = N_welds*pipe.OD()/(pipe.wall()*ureg.hr)
+            Prob = N_welds*pipe.OD/(pipe.wall*ureg.hr)
             if 'small' in cause:
                 Prob *= 2e-11
             elif 'large' in cause:
@@ -140,7 +138,7 @@ class odh_source:
                     Area = 10*ureg.mm**2
                 else:
                     Prob = N_lines*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
-                    Area = pipe.Area()
+                    Area = pipe.Area
             q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
             Prob.ito(1/ureg.hr)
@@ -170,7 +168,6 @@ class odh_source:
         else:
             raise  ValueError ('Mode is not supported: %r. Try "gas line", "fluid line", "dewar" or "other".', failure_mode['mode'])
 
-        return self.Leaks
 
     def leak_flow(self, failure_mode, Area):
         d = (4*Area/math.pi)**0.5 #diameter for the leak openning
@@ -213,6 +210,7 @@ class odh_volume:
     '''
     Volume/building affected by inert gases.
     '''
+    show_sens = 1e-7
     def __init__  (self, name, Fluids, volume):
         self.name = name
         self.Fluids = Fluids #For gas stratification gases that affect the layer
@@ -227,7 +225,7 @@ class odh_volume:
         '''
         Fan_flowrates = []
         PFD_prev = 1
-        for m in range(N_fans, 0, -1):
+        for m in reversed(range(1, N_fans+1)):
             PFD_fan = failure_on_demand(m, N_fans, Test_period, Fail_rate, Mean_repair_time) #Probability of failure if m units is required; Equivalent to 0..m units working
             PFD_m_fan_work = PFD_prev - PFD_fan #Probability exactly m fans work = P(0..m+1) - P(0..m) = PFD_prev-PFD_fan
             Fan_flowrates.insert(0, (PFD_m_fan_work, Q_fan*m))
@@ -274,7 +272,6 @@ class odh_volume:
         Uses list of odh.source instances.
         Power specifies whether there is a power outage. Default is no outage.
         '''
-        show_sens = 1e-7
         self.phi = 0 #fatality rate
         PFD_power_build = Power*PFD_power+(not Power)*1 #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
         for source in odh_source.instances: #Sources is a list of odh_source objects
@@ -296,7 +293,7 @@ class odh_volume:
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
-                    self.info(source, show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak)
+                    self.info(source, self.show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak)
                     if hasattr(self, 'Fan_flowrates'):
                         for (P_fan, Q_fan) in self.Fan_flowrates:
                             P_i = P_leak*(1-self.PFD_system(PFD_power_build, PFD_odh))*PFD_sol_source*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
@@ -304,7 +301,7 @@ class odh_volume:
                             O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
                             F_i = self.fatality_prob(O2_conc)
                             self.phi += P_i*F_i
-                            self.info(source, show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan)
+                            self.info(source, self.show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan)
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
                 else:
@@ -314,7 +311,7 @@ class odh_volume:
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau)
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
-                    self.info(source, show_sens, 'Constant leak', 0, 'Constant', P_i, F_i, Power, q_leak, 0*ureg('ft^3/min'))
+                    self.info(source, self.show_sens, 'Constant leak', 0, 'Constant', P_i, F_i, Power, q_leak, 0*ureg('ft^3/min'))
                     #TODO Constant leak analysis using HVAC ACH
 
     def info(self, source, sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan=None):
@@ -461,32 +458,17 @@ def print_result(*Volumes):
 
     
 if __name__ == "__main__":
-    #Adding the inert gas sources
+    #Testing
 
     He_storage_dewar_gas = odh_source('Storage dewar', 'helium', Q_(3390000, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
     Test = odh_source('Test', 'helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
     Test_2 = Test+Test+Test
     odh_source.delete()
-
-    #He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':Pipe(4, 5,35*ureg.ft), 'N_welds':10, 'Fluid_data':{'P': 285*ureg.psig, 'T':300*ureg.K}, 'max_flow':211*ureg('g/s')}) #Supply to Cold Box; Max flow is taken as Sullair max capacity at discharge
     He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':Tube(6*ureg.inch, 0.15*ureg.inch, 350000*ureg.ft), 'N_welds':10, 'Fluid_data':{'P': 95*ureg.psig, 'T':300*ureg.K}, 'max_flow':108*ureg('g/s')}) #Mid stage; Max flow is taken as midstage return from cryoplant
-    #He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':Pipe(8, 5, 35*ureg.ft), 'N_welds':10, 'Fluid_data':{'P': 16.5*ureg.psig, 'T':300*ureg.K}, 'max_flow':100*ureg('g/s')}) #Return (suction); Max flow is taken from Mycom room ODH analysis as Total supply rate to suction piping
     Test_pipe = Tube(1*ureg.inch, 0.035*ureg.inch, 20*ureg.ft)
     Test_piping = Piping(Test_pipe, {'fluid':'helium', 'P':12*ureg.psig, 'T':5*ureg.K})
     print(Test_piping.m_dot().to(ureg.g/ureg.s))
     print(Test_piping.dP(607*ureg('g/s')))
-
-#    print ('\n'*3)
-#    d = 3.57*ureg.mm
-#    print(dP_openning(9.7*ureg('g/s'), Openning(d), {'fluid':'helium', 'P': 95*ureg.psig, 'T':300*ureg.K}))
-#    print(dP_openning(12.6*ureg('g/s'), Openning(d), {'fluid':'helium', 'P': 95*ureg.psig, 'T':300*ureg.K}))
-#    print ('\n'*3)
-
-    #for source in odh_source.instances:
-    #    print (source.volume)
-    #    print()
-    #    source.print_leaks ()
-    #    print('\n'*2)
     Test_period = 1*ureg('month') #IB1 fan test period 
     Test_period.ito(ureg.hr)
     Mean_repair_time = 3*ureg('days') #IB1 fan/louver average repair time: most delay is caused by response time, it has recently improved from about 1 week to 1 day. The average value of 3 days is assumed
@@ -500,7 +482,6 @@ if __name__ == "__main__":
     IB1_air = odh_volume('IB1 air', ['helium', 'nitrogen'], A*19.8*ureg.feet) #All IB1 air
 
     IB1_air.fan_fail(Test_period, l_vent, Q_fan, N_fans, Mean_repair_time)
-    #print (IB1_air.Fan_flowrates)
     IB1_air.odh()
     print_result(IB1_air)
 
