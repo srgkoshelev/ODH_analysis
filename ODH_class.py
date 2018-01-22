@@ -224,17 +224,14 @@ class odh_volume:
         Calculate (Probability, flow) pairs for all combinations of fans working. All fans are expected to have same volume flow
         '''
         Fan_flowrates = []
-        PFD_prev = 1
-        for m in reversed(range(1, N_fans+1)):
-            PFD_fan = failure_on_demand(m, N_fans, Test_period, Fail_rate, Mean_repair_time) #Probability of failure if m units is required; Equivalent to 0..m units working
-            PFD_m_fan_work = PFD_prev - PFD_fan #Probability exactly m fans work = P(0..m+1) - P(0..m) = PFD_prev-PFD_fan
-            Fan_flowrates.insert(0, (PFD_m_fan_work, Q_fan*m))
-            PFD_prev = PFD_fan
-        Fan_flowrates.insert(0, (PFD_fan, 0*ureg('ft^3/min'))) #last value, probability of system failure with only 1 required to work = probability of exactly 0 fans working
-        unity_check = sum([x for x,y in Fan_flowrates]) 
-        if unity_check != 1:
-            logger.error('Unity check for fan probabilities failed: {}'.format(unity_check))
+        P_all_work = 1
+        for m in range(0, N_fans):
+            P_m_fan_work = prob_m_of_n(m, N_fans, Test_period, Fail_rate, Mean_repair_time) #Probability of exactly m units starting
+            Fan_flowrates.append((P_m_fan_work, Q_fan*m))
+            P_all_work -= P_m_fan_work
+        Fan_flowrates.append((P_all_work, Q_fan*N_fans))
         self.Fan_flowrates = Fan_flowrates
+        print(Fan_flowrates)
         self.mdt = Test_period/(N_fans-1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
 
     def PFD_system (self, *PFDs):
@@ -352,19 +349,16 @@ class odh_volume:
 
 
 
-def failure_on_demand (m, n, T, l, MTTR=0*ureg.hr):
+def prob_m_of_n (m, n, T, l, MTTR=0*ureg.hr):
     '''
-    Failure on demand probability
-    The definition in FESHM chapter (probability of m units out of n starting) is incorrect. Definition in D. Smith's Reliability... is confusing.
-    This value represents the probability of system failure if for normal functioning only m units out of n is required.
-    1 - PFD gives the probability of at least m units out of n starting. That is usually not what required for ODH analysis. The workaround should be used.
+    Calculate the probability of m out of n units working.
     inputs:
         T - test period, hr
         MTTR - mean repair time (when not negligible compared to test period), hr
         l = lambda = failure rate for fan, 1/hr
     '''
-    PFD = math.factorial(n)*(l*T)**(n-m+1)/(math.factorial(m-1)*math.factorial(n-m+2))*(1+(n-m+2)*MTTR/T) #Adapted formula from D. Smith's Reliability for unrevealed failures p. 108 to include repair time effect
-    return PFD
+    m_of_n = math.factorial(n)/(math.factorial(n-m+1)*math.factorial(m))*(l*T)**(n-m)*(1+(n-m+1)*MTTR/T) #see ED00007314 for details
+    return m_of_n
 
 def to_standard_flow(flow_rate, Fluid_data):
     '''
