@@ -231,7 +231,6 @@ class odh_volume:
             P_all_work -= P_m_fan_work
         Fan_flowrates.append((P_all_work, Q_fan*N_fans))
         self.Fan_flowrates = Fan_flowrates
-        print(Fan_flowrates)
         self.mdt = Test_period/(N_fans-1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
 
     def PFD_system (self, *PFDs):
