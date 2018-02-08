@@ -356,7 +356,7 @@ def prob_m_of_n (m, n, T, l, MTTR=0*ureg.hr):
         l = lambda = failure rate for fan, 1/hr
     '''
     C_n_m = math.factorial(n)/(math.factorial(n-m)*math.factorial(m))
-    m_of_n = C_n_m*(l*T)**(n-m)*(1+(n-m+1)*MTTR/T) #see ED00007314 for details
+    m_of_n = C_n_m*(l*T)**(n-m)*(1/(n-m+1)+MTTR/T) #see ED00007314 for details
     return m_of_n
 
 def to_standard_flow(flow_rate, Fluid_data):
