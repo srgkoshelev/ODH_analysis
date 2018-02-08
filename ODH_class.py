@@ -134,7 +134,7 @@ class odh_source:
             N_lines = failure_mode['N_lines'] #For multiple tranfer lines/U-tubes used the min length of pipe should be used
             for cause in ['fluid line leak', 'fluid line rupture']:
                 if 'leak' in cause:
-                    Prob = N_lines*5*10**(-7)/(ureg.hr) #Probaility and flow will be recalculated for each cause using the same variable names
+                    Prob = N_lines*5*10**(-7)/(ureg.hr) 
                     Area = 10*ureg.mm**2
                 else:
                     Prob = N_lines*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
@@ -231,7 +231,7 @@ class odh_volume:
             P_all_work -= P_m_fan_work
         Fan_flowrates.append((P_all_work, Q_fan*N_fans))
         self.Fan_flowrates = Fan_flowrates
-        self.mdt = Test_period/(N_fans-1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
+        self.mdt = Test_period/(N_fans+1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
 
     def PFD_system (self, *PFDs):
         '''
@@ -261,7 +261,6 @@ class odh_volume:
         else:
             logger.error ('ODH fatality rate is too high. Please, check calculations')
 
-
     def odh (self, Power = True):
         '''
         Calculate ODH fatality rate and recommend ODH class designation.
@@ -269,7 +268,7 @@ class odh_volume:
         Power specifies whether there is a power outage. Default is no outage.
         '''
         self.phi = 0 #fatality rate
-        PFD_power_build = Power*PFD_power+(not Power)*1 #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
+        PFD_power_build = Power*PFD_power+(not Power) #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
         for source in odh_source.instances: #Sources is a list of odh_source objects
             if source.fluid not in self.Fluids:
                 continue
@@ -280,7 +279,7 @@ class odh_volume:
                     continue
                 else:
                     logger.warning('Potentially dangerous for {} source "{}" has no defined leaks!\n'.format(self.name, source.name))
-            PFD_sol_source = source.isol_valve*PFD_sol+(not source.isol_valve)*1 #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
+            PFD_sol_source = source.isol_valve*PFD_sol+(not source.isol_valve) #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
             for cause, leak in source.Leaks.items():
                 (P_leak, q_leak, tau) = leak
                 if hasattr(P_leak, 'dimensionality'):
@@ -356,7 +355,8 @@ def prob_m_of_n (m, n, T, l, MTTR=0*ureg.hr):
         MTTR - mean repair time (when not negligible compared to test period), hr
         l = lambda = failure rate for fan, 1/hr
     '''
-    m_of_n = math.factorial(n)/(math.factorial(n-m+1)*math.factorial(m))*(l*T)**(n-m)*(1+(n-m+1)*MTTR/T) #see ED00007314 for details
+    C_n_m = math.factorial(n)/(math.factorial(n-m)*math.factorial(m))
+    m_of_n = C_n_m*(l*T)**(n-m)*(1+(n-m+1)*MTTR/T) #see ED00007314 for details
     return m_of_n
 
 def to_standard_flow(flow_rate, Fluid_data):
