@@ -175,7 +175,7 @@ class odh_source:
         if failure_mode['mode'] == 'gas line':
             pipe.L = pipe.L/2 #Average path for the flow will be half of piping length for gas piping
         openning = Openning(d)
-        piping = Piping(pipe, failure_mode['Fluid_data'])
+        piping = Piping(failure_mode['Fluid_data'], pipe)
         piping.add(openning)
         m_dot = piping.m_dot(P_NTP)
         return self.limit_flow(m_dot, failure_mode)
@@ -459,7 +459,7 @@ if __name__ == "__main__":
     odh_source.delete()
     He_storage_dewar_gas.leak({'mode':'gas line', 'Pipe':Tube(6*ureg.inch, 0.15*ureg.inch, 350000*ureg.ft), 'N_welds':10, 'Fluid_data':{'P': 95*ureg.psig, 'T':300*ureg.K}, 'max_flow':108*ureg('g/s')}) #Mid stage; Max flow is taken as midstage return from cryoplant
     Test_pipe = Tube(1*ureg.inch, 0.035*ureg.inch, 20*ureg.ft)
-    Test_piping = Piping(Test_pipe, {'fluid':'helium', 'P':12*ureg.psig, 'T':5*ureg.K})
+    Test_piping = Piping({'fluid':'helium', 'P':12*ureg.psig, 'T':5*ureg.K}, Test_pipe)
     print(Test_piping.m_dot().to(ureg.g/ureg.s))
     print(Test_piping.dP(607*ureg('g/s')))
     Test_period = 1*ureg('month') #IB1 fan test period 
