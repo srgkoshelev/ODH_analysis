@@ -34,11 +34,12 @@ Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and n
 class odh_source:
     """Define the possible source of inert gas"""
     instances = [] #Keeping information on all the sources within the class
-    def __init__ (self, name, fluid, Volume, phase = 'gas', pressure = P_NTP): 
+    def __init__ (self, name, fluid, Volume, phase = 'gas', pressure = P_NTP, N=1): 
         odh_source.instances.append(self) #adding initialized instance to instances list
         self.name = name
         self.fluid = fluid
         self.Leaks = {}
+        self.N = N #Number of sources if multiple exist, e.g. gas cylinders. Increases probability of failure by N.
         assert phase in ['vapor','liquid', 'gas'], 'Phase can only be liquid or vapor: %r' % phase
         if phase == 'vapor' or phase == 'gas':
             self.volume = Volume*pressure/Q_(14.7,ureg.psi)
@@ -57,6 +58,14 @@ class odh_source:
             return odh_source(None, self.fluid, total_volume, 'gas', P_NTP) 
         else:
             logger.error ('\nBoth volumes should contain the same fluid')
+
+    def __mul__(self, num):
+        self.N *= num
+        return self
+
+    def __rmul__(self, num):
+        self.N *= num
+        return self
 
     def __str__ (self):
         if self.name:
@@ -83,7 +92,7 @@ class odh_source:
         if 'large' in cause and pipe.D<=2:
             return
         cause += ' {}'.format(str(pipe.D))
-        Prob = pipe.L/(ureg.m*ureg.hr)
+        Prob = self.N*pipe.L/(ureg.m*ureg.hr)
         if 'small' in cause:
             Area = 10*ureg.mm**2
             Prob *= 1e-9
@@ -97,7 +106,7 @@ class odh_source:
             logger.error ('Gas pipe failure cause is not recognized!:{}'.format(cause))
 
         if 'weld' in cause:
-            Prob = N_welds*pipe.OD/(pipe.wall*ureg.hr)
+            Prob = self.N*N_welds*pipe.OD/(pipe.wall*ureg.hr)
             if 'small' in cause:
                 Prob *= 2e-11
             elif 'large' in cause:
@@ -132,22 +141,32 @@ class odh_source:
 
         elif failure_mode['mode'] == 'fluid line':
             N_lines = failure_mode['N_lines'] #For multiple tranfer lines/U-tubes used the min length of pipe should be used
+            Prob0 = self.N*N_lines
             for cause in ['fluid line leak', 'fluid line rupture']:
                 if 'leak' in cause:
-                    Prob = N_lines*5*10**(-7)/(ureg.hr) 
+                    Prob = Prob0*5*10**(-7)/(ureg.hr) 
                     Area = 10*ureg.mm**2
                 else:
-                    Prob = N_lines*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
+                    Prob = Prob0*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
                     Area = pipe.Area
             q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
             Prob.ito(1/ureg.hr)
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
-        elif failure_mode['mode'] == 'dewar':
-            cause = 'loss of vacuum to air'
-            Prob = 4*10**(-6)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
+        elif failure_mode['mode'] == 'dewar': #Case of VJ failure, worst case is based on respective analysis from PVEN
+            cause = 'vacuum jacket failure'
+            Prob = self.N*4*10**(-6)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
             q_std = self.limit_flow(failure_mode['q_relief'], failure_mode)
+            tau = self.volume/q_std
+            Prob.ito(1/ureg.hr)
+            self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
+
+        elif failure_mode['mode'] == 'vessel failure':
+            cause = 'vessel port rupture'
+            Prob = self.N*5*10**(-9)/(ureg.hr) #FESHM chapter, Table 2, Pressure Vessel, Disruptive Failure
+            Area = pipe.Area
+            q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
             Prob.ito(1/ureg.hr)
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
@@ -155,7 +174,7 @@ class odh_source:
         elif failure_mode['mode'] == 'other':
             cause = failure_mode['cause']
             Prob = failure_mode['Prob'] #Probability of a single failure
-            Prob_total = Prob*failure_mode.get('N', 1) #Total probability of failure
+            Prob_total = self.N*Prob*failure_mode.get('N', 1) #Total probability of failure
             try:
                 Prob.ito(1/ureg.hr)
             except AttributeError:
@@ -378,6 +397,8 @@ def to_standard_flow(flow_rate, Fluid_data):
         else:
             logger.warning('Flow conditions for volumetric flow {:.3~} are not set. Assuming standard flow at NTP'.format(flow_rate))
             q_std = flow_rate
+    else:
+        logger.warning('Flow dimensionality is not supported: {:.3~}'.format(flow_rate.dimensionality))
     q_std.ito(ureg.ft**3/ureg.min)
     return q_std
 
