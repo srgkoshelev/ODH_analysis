@@ -174,9 +174,13 @@ class odh_source:
         pipe = failure_mode['Pipe'] #For fluid line whole length is affecting the flow; the length should be to the nearest bayonet from the source
         if failure_mode['mode'] == 'gas line':
             pipe.L = pipe.L/2 #Average path for the flow will be half of piping length for gas piping
-        openning = Openning(d)
-        piping = Piping(failure_mode['Fluid_data'], pipe)
-        piping.add(openning)
+        entrance = Entrance(d)
+        openning = Exit(d)
+        piping = Piping(failure_mode['Fluid_data'])
+        piping.add(entrance,
+                   pipe,
+                   openning,
+                   )
         m_dot = piping.m_dot(P_NTP)
         return self.limit_flow(m_dot, failure_mode)
 
