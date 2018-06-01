@@ -14,13 +14,6 @@ ureg = ht.ureg
 Q_ = ureg.Quantity
 #ureg.auto_reduce_dimensions = True
 
-#Setting units for "standard" flow
-T_NTP = Q_(68, ureg.degF) #Normal Temperature (NIST)
-P_NTP = Q_(14.7, ureg.psi) #Normal Pressure (NIST)
-
-T_MSC = Q_(15, ureg.degC) #Metric Standard Conditions (used by Crane TP-410)
-P_MSC = Q_(101325, ureg.Pa) #Metric Standard Conditions (used by Crane TP-410)
-
 #Probability of failure on demand for main cases
 PFD_power = 1e-4 #For some reason FESHM chapter lists 3e-4 as demand rate and 1e-4/hr failure rate + 1 hr time off. D. Smith's Reliability... states that PFD = lambda*MTD with lambda = 1e-4 1/hr and MDT = 1 hr gives 1e-4 value.
 lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant leaks
@@ -34,7 +27,7 @@ Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and n
 class odh_source:
     """Define the possible source of inert gas"""
     instances = [] #Keeping information on all the sources within the class
-    def __init__ (self, name, fluid, Volume, phase = 'gas', pressure = P_NTP, N=1): 
+    def __init__ (self, name, fluid, Volume, phase = 'gas', pressure = ht.P_NTP, N=1): 
         odh_source.instances.append(self) #adding initialized instance to instances list
         self.name = name
         self.fluid = fluid
@@ -44,9 +37,9 @@ class odh_source:
         if phase == 'vapor' or phase == 'gas':
             self.volume = Volume*pressure/Q_(14.7,ureg.psi)
         elif phase == 'liquid':
-            Fluid_data = ht.pack_fluid(fluid, T_NTP, P_NTP) #standard conditions
+            Fluid_data = ht.pack_fluid(fluid, ht.T_NTP, ht.P_NTP) #standard conditions
             (x, M, D_fluid_std) = ht.rp_init(Fluid_data)
-            satur = ht.satp(P_NTP, x) #assuming incompressible liquid
+            satur = ht.satp(ht.P_NTP, x) #assuming incompressible liquid
             D_fluid_sat = satur ['Dliq']*ureg('mol/L')
             self.volume = Volume*D_fluid_sat/D_fluid_std
         self.volume.ito(ureg.feet**3)
@@ -55,7 +48,7 @@ class odh_source:
     def __add__ (self, other):
         if self.fluid == other.fluid:
             total_volume = self.volume + other.volume
-            return odh_source(None, self.fluid, total_volume, 'gas', P_NTP) 
+            return odh_source(None, self.fluid, total_volume, 'gas', ht.P_NTP) 
         else:
             logger.error ('\nBoth volumes should contain the same fluid')
 
@@ -200,7 +193,7 @@ class odh_source:
                    pipe,
                    openning,
                    )
-        m_dot = piping.m_dot(P_NTP)
+        m_dot = piping.m_dot(ht.P_NTP)
         return self.limit_flow(m_dot, failure_mode)
 
     def limit_flow(self, flow, failure_mode):
@@ -382,26 +375,6 @@ def prob_m_of_n (m, n, T, l, MTTR=0*ureg.hr):
     m_of_n = C_n_m*(l*T)**(n-m)*(1/(n-m+1)+MTTR/T) #see ED00007314 for details
     return m_of_n
 
-def to_standard_flow(flow_rate, Fluid_data):
-    '''
-    Converting volumetric flow at certain conditions or mass flow to volumetric flow at NTP
-    '''
-    (x, M, D_NTP) = ht.rp_init({'fluid':Fluid_data['fluid'], 'T':T_NTP, 'P':P_NTP})
-    if flow_rate.dimensionality == ureg('kg/s').dimensionality: #mass flow, flow conditions are unnecessary
-        q_std = flow_rate/(D_NTP*M)
-    elif flow_rate.dimensionality == ureg('m^3/s').dimensionality: #volumetric flow given, converting to standard pressure and temperature
-        if 'T' in Fluid_data and 'P' in Fluid_data:
-            (fluid, T_fluid, P_fluid) = ht.unpack_fluid(Fluid_data)
-            (x, M, D_fluid) = ht.rp_init(Fluid_data)
-            q_std = flow_rate*D_fluid/D_NTP
-        else:
-            logger.warning('Flow conditions for volumetric flow {:.3~} are not set. Assuming standard flow at NTP'.format(flow_rate))
-            q_std = flow_rate
-    else:
-        logger.warning('Flow dimensionality is not supported: {:.3~}'.format(flow_rate.dimensionality))
-    q_std.ito(ureg.ft**3/ureg.min)
-    return q_std
-
 def conc_vent (V, R, Q, t):
     #V - volume of the confined space (ft3 or m3)
     #R - spill rate into confined space (scfm or m3/s)
@@ -503,7 +476,6 @@ if __name__ == "__main__":
     IB1_air.odh()
     print_result(IB1_air)
 
-    tau = list(range(math.ceil(266300*60/7750)))*ureg.s
     Q = -16000*ureg('ft^3/min')
     R =7750*ureg('ft^3/min')
     tau = 266300*ureg.cubic_feet/R
