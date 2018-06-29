@@ -134,13 +134,13 @@ class odh_source:
 
         elif failure_mode['mode'] == 'fluid line':
             N_lines = failure_mode['N_lines'] #For multiple tranfer lines/U-tubes used the min length of pipe should be used
-            Prob0 = self.N*N_lines
+            N = self.N*N_lines
             for cause in ['fluid line leak', 'fluid line rupture']:
                 if 'leak' in cause:
-                    Prob = Prob0*5*10**(-7)/(ureg.hr) 
+                    Prob = N*5*10**(-7)/(ureg.hr) 
                     Area = 10*ureg.mm**2
                 else:
-                    Prob = Prob0*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
+                    Prob = N*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
                     Area = pipe.Area
             q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
@@ -450,6 +450,7 @@ def print_result(*Volumes):
     
 if __name__ == "__main__":
     #Testing
+    print(ht.sigma)
 
     He_storage_dewar_gas = odh_source('Storage dewar', 'helium', Q_(3390000, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
     Test = odh_source('Test', 'helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
