@@ -240,12 +240,9 @@ class Volume:
         Calculate (Probability, flow) pairs for all combinations of fans working. All fans are expected to have same volume flow
         '''
         Fan_flowrates = []
-        P_all_work = 1
-        for m in range(0, N_fans):
+        for m in range(N_fans+1):
             P_m_fan_work = prob_m_of_n(m, N_fans, Test_period, Fail_rate, Mean_repair_time) #Probability of exactly m units starting
             Fan_flowrates.append((P_m_fan_work, Q_fan*m))
-            P_all_work -= P_m_fan_work
-        Fan_flowrates.append((P_all_work, Q_fan*N_fans))
         self.Fan_flowrates = Fan_flowrates
         self.mdt = Test_period/(N_fans+1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
 
@@ -363,16 +360,18 @@ class Volume:
 
 
 
-def prob_m_of_n (m, n, T, l, MTTR=0*ureg.hr):
+def prob_m_of_n (m, n, T, l, MRT=0*ureg.hr):
     '''
     Calculate the probability of m out of n units working.
     inputs:
         T - test period, hr
-        MTTR - mean repair time (when not negligible compared to test period), hr
+        MRT - mean repair time (when not negligible compared to test period), hr
         l = lambda = failure rate for fan, 1/hr
     '''
     C_n_m = math.factorial(n)/(math.factorial(n-m)*math.factorial(m))
-    m_of_n = C_n_m*(l*T)**(n-m)*(1/(n-m+1)+MTTR/T) #see ED00007314 for details
+    PFD_one_unit = l*T
+    F_adj = 1/(n-m+1)+MRT/T #Adjustment coefficient: T/(n-m+1) will be average failure reveal time (D. Smith, Reliability..., p. 108); MRT is added to reveal time to get total unavailability time
+    m_of_n = C_n_m*(PFD_one_unit)**(n-m)*(1-PFD_one_unit)**m*F_adj #see ED00007314 for details
     return m_of_n
 
 def conc_vent (V, R, Q, t):
