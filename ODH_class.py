@@ -15,12 +15,11 @@ Q_ = ureg.Quantity
 #ureg.auto_reduce_dimensions = True
 
 #Probability of failure on demand for main cases
-PFD_power = 1e-4 #For some reason FESHM chapter lists 3e-4 as demand rate and 1e-4/hr failure rate + 1 hr time off. D. Smith's Reliability... states that PFD = lambda*MTD with lambda = 1e-4 1/hr and MDT = 1 hr gives 1e-4 value.
 lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant leaks
-PFD_odh = 2e-3 #Conservative etimate; from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
-PFD_sol = 1e-3 #Solenoid valve, failure to operate; Used as failure to close when not powered (usually solenoids used for isolating the source)
-
+Failure_rate = {'fluid leak':5e-7/ureg.hr, 'fluid rupture':2e-8/ureg.hr, 'vacuum jacket':1e-6/ureg.hr, 'vessel rupture':5e-9/ureg.hr, 'weld small leak':2e-11/ureg.hr, 'weld large leak':2e-12/ureg.hr, 'weld rupture':6e-13/ureg.hr, 'pipe small leak':1e-9/(ureg.m*ureg.hr), 'pipe large leak':1e-10/(ureg.m*ureg.hr), 'pipe rupture':3e-11/(ureg.m*ureg.hr), } #Compilation of FESHM 4240, Table 1 and Table 2
+PFD = {'sol':1e-3, 'odh':2e-3, 'power':1e-4, } #Solenoid PFD from FESHM 4240 Table 2, power - Table 1, "ODH system" - TBD
+#TODO State the source for ODH system PFD
 #Gas pipe safety factor
 Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and number of welds. Unfortunately both values are hard to estimate accurately thus a safety factor is used
 
@@ -40,7 +39,7 @@ class Source:
             Fluid_data = ht.pack_fluid(fluid, ht.T_NTP, ht.P_NTP) #standard conditions
             (x, M, D_fluid_std) = ht.rp_init(Fluid_data)
             satur = ht.satp(ht.P_NTP, x) #assuming incompressible liquid
-            D_fluid_sat = satur ['Dliq']*ureg('mol/L')
+            D_fluid_sat = satur ['Dliq']
             self.volume = Volume*D_fluid_sat/D_fluid_std
         self.volume.ito(ureg.feet**3)
         self.isol_valve = False #Shows if there is an isolation valve that is used by ODH system
@@ -85,27 +84,27 @@ class Source:
         if 'large' in cause and pipe.D<=2:
             return
         cause += ' {}'.format(str(pipe.D))
-        Prob = self.N*pipe.L/(ureg.m*ureg.hr)
+        Prob = self.N*pipe.L
         if 'small' in cause:
             Area = 10*ureg.mm**2
-            Prob *= 1e-9
+            Prob *= Failure_rate['pipe small leak']
         elif 'large' in cause:
             Area = 1000*ureg.mm**2
-            Prob *= 1e-10
+            Prob *= Failure_rate['pipe large leak']
         elif 'rupture' in cause:
             Area = pipe.Area
-            Prob *= 3e-11
+            Prob *= Failure_rate['pipe rupture']
         else: 
             logger.error ('Gas pipe failure cause is not recognized!:{}'.format(cause))
 
         if 'weld' in cause:
-            Prob = self.N*N_welds*pipe.OD/(pipe.wall*ureg.hr)
+            Prob = self.N*N_welds*pipe.OD/(pipe.wall)
             if 'small' in cause:
-                Prob *= 2e-11
+                Prob *= Failure_rate['weld small leak']
             elif 'large' in cause:
-                Prob *= 2e-12
+                Prob *= Failure_rate['weld small leak']
             elif 'rupture' in cause:
-                Prob *= 6e-13
+                Prob *= Failure_rate['weld rupture']
 
         q_std = self.leak_flow(failure_mode, Area)
         tau = self.volume/q_std
@@ -137,27 +136,27 @@ class Source:
             N = self.N*N_lines
             for cause in ['fluid line leak', 'fluid line rupture']:
                 if 'leak' in cause:
-                    Prob = N*5*10**(-7)/(ureg.hr) 
+                    Prob = N*Failure_rate['fluid leak']
                     Area = 10*ureg.mm**2
                 else:
-                    Prob = N*4*10**(-8)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
+                    Prob = N*Failure_rate['fluid rupture']
                     Area = pipe.Area
             q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
             Prob.ito(1/ureg.hr)
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
-        elif failure_mode['mode'] == 'dewar': #Case of VJ failure, worst case is based on respective analysis from PVEN
+        elif failure_mode['mode'] == 'vacuum jacket': #Case of VJ failure, worst case is based on respective analysis from PVEN
             cause = 'vacuum jacket failure'
-            Prob = self.N*4*10**(-6)/(ureg.hr) #FESHM chapter uses unconservative approach with ~60% confidence; This value gives 90% confidence
+            Prob = self.N*Failure_rate['vacuum jacket']
             q_std = self.limit_flow(failure_mode['q_relief'], failure_mode)
             tau = self.volume/q_std
             Prob.ito(1/ureg.hr)
             self.Leaks[cause] = (Prob, q_std, tau.to(ureg.min))
 
-        elif failure_mode['mode'] == 'vessel failure':
+        elif failure_mode['mode'] == 'vessel rupture':
             cause = 'vessel port rupture'
-            Prob = self.N*5*10**(-9)/(ureg.hr) #FESHM chapter, Table 2, Pressure Vessel, Disruptive Failure
+            Prob = self.N*Failure_rate['vessel rupture']
             Area = pipe.Area
             q_std = self.leak_flow(failure_mode, Area)
             tau = self.volume/q_std
@@ -226,7 +225,7 @@ class Volume:
     '''
     Volume/building affected by inert gases.
     '''
-    show_sens = 1e-7
+    show_sens = 1e-7/ureg.hr
     def __init__  (self, name, Fluids, volume):
         self.name = name
         self.Fluids = Fluids #For gas stratification gases that affect the layer
@@ -281,7 +280,7 @@ class Volume:
         Power specifies whether there is a power outage. Default is no outage.
         '''
         self.phi = 0 #fatality rate
-        PFD_power_build = Power*PFD_power+(not Power) #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
+        PFD_power_build = Power*PFD['power']+(not Power) #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
         for source in Source.instances: #Sources is a list of Source objects
             if source.fluid not in self.Fluids:
                 continue
@@ -292,11 +291,11 @@ class Volume:
                     continue
                 else:
                     logger.warning('Potentially dangerous for {} source "{}" has no defined leaks!\n'.format(self.name, source.name))
-            PFD_sol_source = source.isol_valve*PFD_sol+(not source.isol_valve) #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
+            PFD_sol_source = source.isol_valve*PFD['sol']+(not source.isol_valve) #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
             for cause, leak in source.Leaks.items():
                 (P_leak, q_leak, tau) = leak
                 if hasattr(P_leak, 'dimensionality'):
-                    P_i = P_leak*(PFD_power_build*PFD_sol_source+(1-PFD_power_build)*PFD_odh) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
+                    P_i = P_leak*(PFD_power_build*PFD_sol_source+(1-PFD_power_build)*PFD['odh']) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
                     #The previous equation is equal to P_i = P_leak*self.PFD_system(PFD_power, PFD_odh) probability of power or ODH system failure: fans do not start
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                     F_i = self.fatality_prob(O2_conc)
@@ -304,7 +303,7 @@ class Volume:
                     self.info(source, self.show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak)
                     if hasattr(self, 'Fan_flowrates'):
                         for (P_fan, Q_fan) in self.Fan_flowrates:
-                            P_i = P_leak*(1-self.PFD_system(PFD_power_build, PFD_odh))*PFD_sol_source*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
+                            P_i = P_leak*(1-self.PFD_system(PFD_power_build, PFD['odh']))*PFD_sol_source*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
                             #Above is equal to P_i = P_leak*(1-self.PFD_system(PFD_power, PFD_odh))*P_fan - Probability of leak occuring, ODH system/power working and m number of fans working
                             O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
                             F_i = self.fatality_prob(O2_conc)
@@ -324,8 +323,8 @@ class Volume:
 
     def info(self, source, sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan=None):
         phi = P_i*F_i
-        if phi >= sens/ureg.hr and Power:
-            print ('Major ODH cause with fatality rate > {:.2~}'.format(sens/ureg.hr))
+        if phi >= sens and Power:
+            print ('Major ODH cause with fatality rate > {:.2~}'.format(sens))
             print ('Volume: {}, {:.2~}'.format(self, self.volume.to(ureg.ft**3)))
             print ('Source: '+source.name)
             if q_leak and Q_fan:
@@ -487,3 +486,4 @@ if __name__ == "__main__":
     print ('Oxygen concentration: {:.0%}'.format(C))
     print ('Oxygen pressure: {:.0f}'.format(C/0.21*160)) 
     print ('Fatality factor: {:.0g}'.format(Test_vol.fatality_prob(C)))
+    print (prob_m_of_n(1, 1, 1*ureg.hr, 9e-6/ureg.hr))
