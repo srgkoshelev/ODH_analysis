@@ -50,10 +50,12 @@ class Source:
             return Source(None, self.fluid, total_volume, 'gas', ht.P_NTP) 
         else:
             logger.error ('\nBoth volumes should contain the same fluid')
+        #TODO replace with static combine function; function returns the new object (combined), deletes the other objects and displays a message
 
     def __mul__(self, num):
         self.N *= num
         return self
+    #TODO Do we even need this functionality, when you can define N at initialization?
 
     def __rmul__(self, num):
         self.N *= num
