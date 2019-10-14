@@ -25,37 +25,30 @@ Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and n
 
 class Source:
     """Define the possible source of inert gas"""
-    instances = [] #Keeping information on all the sources within the class
-    def __init__ (self, name, fluid, Volume, phase = 'gas', pressure = ht.P_NTP, N=1): 
-        Source.instances.append(self) #adding initialized instance to instances list
+    def __init__ (self, name, Fluid, volume, N=1): 
         self.name = name
-        self.fluid = fluid
+        self.Fluid = Fluid
         self.Leaks = {}
         self.N = N #Number of sources if multiple exist, e.g. gas cylinders. Increases probability of failure by N.
-        assert phase in ['vapor','liquid', 'gas'], 'Phase can only be liquid or vapor: %r' % phase
-        if phase == 'vapor' or phase == 'gas':
-            self.volume = Volume*pressure/Q_(14.7,ureg.psi)
-        elif phase == 'liquid':
-            Fluid_data = ht.pack_fluid(fluid, ht.T_NTP, ht.P_NTP) #standard conditions
-            (x, M, D_fluid_std) = ht.rp_init(Fluid_data)
-            satur = ht.satp(ht.P_NTP, x) #assuming incompressible liquid
-            D_fluid_sat = satur ['Dliq']
-            self.volume = Volume*D_fluid_sat/D_fluid_std
+        #Calculating volume at standard conditions
+        TempState = ht.ThermState(name=Fluid.name, backend=Fluid.backend)
+        TempState.update('T', ht.T_NTP, 'P', ht.P_NTP)
+        self.volume = volume*Fluid.Dmass/TempState.Dmass
         self.volume.ito(ureg.feet**3)
-        self.isol_valve = False #Shows if there is an isolation valve that is used by ODH system
+        self.isol_valve = False #By default assume there is no isolation valve that is used by ODH system
 
     def __add__ (self, other):
-        if self.fluid == other.fluid:
+        if self.Fluid.name == other.Fluid.name:
             total_volume = self.volume + other.volume
-            return Source(None, self.fluid, total_volume, 'gas', ht.P_NTP) 
+            TempState = ht.ThermState(name=self.Fluid.name, backend=self.Fluid.backend)
+            TempState.update('T', ht.T_NTP, 'P', ht.P_NTP)
+            return Source(None, '', TempState, total_volume) 
         else:
             logger.error ('\nBoth volumes should contain the same fluid')
-        #TODO replace with static combine function; function returns the new object (combined), deletes the other objects and displays a message
 
     def __mul__(self, num):
         self.N *= num
         return self
-    #TODO Do we even need this functionality, when you can define N at initialization?
 
     def __rmul__(self, num):
         self.N *= num
@@ -69,7 +62,7 @@ class Source:
 
     def print (self):
         if self.name:
-            print('{} is an ODH source of {} with volume of {:.3~}'.format(self.name, self.fluid, self.volume))
+            print('{} is an ODH source of {} with volume of {:.3~}'.format(self.name, self.Fluid.name, self.volume))
     
     def delete(*Sources):
         '''
