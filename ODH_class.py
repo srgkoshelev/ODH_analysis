@@ -18,7 +18,7 @@ Q_ = ureg.Quantity
 lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant leaks
 lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 Failure_rate = {'fluid leak':5e-7/ureg.hr, 'fluid rupture':2e-8/ureg.hr, 'vacuum jacket':1e-6/ureg.hr, 'vessel rupture':5e-9/ureg.hr, 'weld small leak':2e-11/ureg.hr, 'weld large leak':2e-12/ureg.hr, 'weld rupture':6e-13/ureg.hr, 'pipe small leak':1e-9/(ureg.m*ureg.hr), 'pipe large leak':1e-10/(ureg.m*ureg.hr), 'pipe rupture':3e-11/(ureg.m*ureg.hr), } #Compilation of FESHM 4240, Table 1 and Table 2
-PFD = {'sol':1e-3, 'odh':2e-3, 'power':1e-4, } #Solenoid PFD from FESHM 4240 Table 2, power - Table 1, "ODH system" - TBD
+PFD = {'sol':1e-3, 'odh':2e-3, 'power':3e-4, } #Solenoid PFD from FESHM 4240 Table 2, power - Table 1, "ODH system" - TBD
 #TODO State the source for ODH system PFD
 #Gas pipe safety factor
 Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and number of welds. Unfortunately both values are hard to estimate accurately thus a safety factor is used
@@ -255,7 +255,7 @@ class Volume:
         elif O2_conc <= 0.088: #8.8% of oxygen is assumed to be 100% fatal
             Fi = 1
         else:
-            Fi = 10**(6.6956-76.087*O2_conc) #Fi formula, reverse engineered using 8.8% and 18% thresholds; These values are used in FESHM chapter to approximate O2 partial pressure
+            Fi = 10**(6.5-76*O2_conc) #Fi formula, reverse engineered using 8.8% and 18% thresholds; These values are used in FESHM chapter to approximate O2 partial pressure
         return Fi
 
     def odh_class(self):
