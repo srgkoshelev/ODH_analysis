@@ -1,4 +1,6 @@
 #Defining failure rates as per FESHM 4240 chapter
+from .ODH_class import Q_
+
 TABLE_1 = {'Compressor':
            {'Leak': Q_('5 * 10^-6 / hr'),
             'Component rupture': Q_('3 * 10^-7 / hr')},
@@ -7,16 +9,16 @@ TABLE_1 = {'Compressor':
            'Electrical Power Failure':
            {'Time rate': Q_('1 * 10^-4 / hr'),
             'Demand rate': Q_('3 * 10^-4 / hr')},
-           'Fluid Line':
+           'Fluid line':
            {'Leak': Q_('5 * 10^-7 /hr'),
             'Rupture': Q_('2 * 10^-8 / hr')},
            'Cryogenic magnet powered':
            {'Rupture': Q_('2 * 10 ^-7 / hr')},
            'Cryogenic magnet not powered':
            {'Rupture': Q_('2 * 10 ^-8 / hr')},
-           'Header Piping Assembly':
+           'Header piping assembly':
            {'Rupture': Q_('1 * 10^-8 / hr')},
-           'U-Tube Change':
+           'U-Tube change':
            {'Small event': Q_('3 * 10^-2'),
             'Large event': Q_('1 * 10^-3')},
 }
@@ -80,7 +82,7 @@ TABLE_2 = {'Battery':
            {'Open': Q_('1 * 10^-6 / hr'),
             'Short': Q_('1 * 10^-6 / hr')},
            'Valve, motorized':
-           {'Failure to operate': Q_('1 * 10^-3').
+           {'Failure to operate': Q_('1 * 10^-3'),
             'Failure to remain open': Q_('1 * 10^-4'),
             'External leak': Q_('1 * 10^-8 /hr'),
             'Rupture': Q_('5 * 10^-10 / hr')},
