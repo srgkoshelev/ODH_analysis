@@ -4,7 +4,8 @@
 import math, sys, logging
 sys.path.append('D:/Personal/Python repo/')
 from heat_transfer import functions as ht
-from heat_transfer.piping import *
+from collections import namedtuple
+from .FESH4240_TABLES import *
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -15,13 +16,8 @@ Q_ = ureg.Quantity
 #ureg.auto_reduce_dimensions = True
 
 #Probability of failure on demand for main cases
-lambda_power = 1e-4/ureg.hr #Electrical power failure rate; Used for constant leaks
 lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
-Failure_rate = {'fluid leak':5e-7/ureg.hr, 'fluid rupture':2e-8/ureg.hr, 'vacuum jacket':1e-6/ureg.hr, 'vessel rupture':5e-9/ureg.hr, 'weld small leak':2e-11/ureg.hr, 'weld large leak':2e-12/ureg.hr, 'weld rupture':6e-13/ureg.hr, 'pipe small leak':1e-9/(ureg.m*ureg.hr), 'pipe large leak':1e-10/(ureg.m*ureg.hr), 'pipe rupture':3e-11/(ureg.m*ureg.hr), } #Compilation of FESHM 4240, Table 1 and Table 2
-PFD = {'sol':1e-3, 'odh':2e-3, 'power':3e-4, } #Solenoid PFD from FESHM 4240 Table 2, power - Table 1, "ODH system" - TBD
 #TODO State the source for ODH system PFD
-#Gas pipe safety factor
-Fs_gas = 3 #Gas pipe leak probability is calculated using length of piping and number of welds. Unfortunately both values are hard to estimate accurately thus a safety factor is used
 
 class Source:
     """Define the possible source of inert gas"""
