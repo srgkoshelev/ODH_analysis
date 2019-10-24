@@ -23,19 +23,19 @@ lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the
 
 class Source:
     """Define the possible source of inert gas"""
-    def __init__ (self, name, Fluid, volume, N=1): 
+    def __init__(self, name, Fluid, volume, N=1):
         self.name = name
         self.Fluid = Fluid
         self.Leaks = {}
         self.N = N #Number of sources if multiple exist, e.g. gas cylinders. Increases probability of failure by N.
         #Calculating volume at standard conditions
-        TempState = ht.ThermState(name=Fluid.name, backend=Fluid.backend)
+        TempState = copy(Fluid)
         TempState.update('T', ht.T_NTP, 'P', ht.P_NTP)
         self.volume = volume*Fluid.Dmass/TempState.Dmass
         self.volume.ito(ureg.feet**3)
         self.isol_valve = False #By default assume there is no isolation valve that is used by ODH system
 
-    def gas_pipe_failure(self, Pipe, Fluid=self.Fluid, N_welds=1, max_flow=Q_(float('inf'), ureg.kg/ureg.s)):
+    def gas_pipe_failure(self, Pipe, Fluid=None, N_welds=1, max_flow=Q_(float('inf'), ureg.kg/ureg.s)):
         """
         Calculate failure rate, flow rate and expected time duration of the event for gas pipe failure. Based on FESHM 4240.
         """
@@ -48,11 +48,12 @@ class Source:
                     TempPipe = copy(Pipe)
                     TempPipe.L = Pipe.L / 2 #Average path for the flow will be half of piping length for gas piping
                     area = TABLE_2[cause][mode]['Area'] #Leak area from FESHM Table 2
-                    q_std = min(self._leak_flow(TempPipe, area), ht.to_standard_flow(max_flow))
+                    Fluid = Fluid or self.Fluid #If Fluid not defined use Fluid of the Source
+                    q_std = min(self._leak_flow(TempPipe, area, Fluid), ht.to_standard_flow(max_flow))
                     tau = self.volume/q_std
                     self.Leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
 
-    def transfer_line_failure(Pipe, N_lines=1):
+    def transfer_line_failure(Pipe, Fluid=None, N_lines=1):
         """
         Calculate failure rate, flow rate and expected time duration of the event for transfer line failure. Based on FESHM 4240.
         """
@@ -61,21 +62,22 @@ class Source:
                 }
         for mode in ['Leak', 'Rupture']:
             name = f'Fluid line {mode.lower()}: {Pipe}'
-            failure_rate = N_lines * TABLE_1.['Fluid line'][mode]
+            failure_rate = N_lines * TABLE_1['Fluid line'][mode]
             area_cases = Area[mode]
-            q_std = self._leak_flow(Pipe, area)
+            Fluid = Fluid or self.Fluid #If Fluid not defined use Fluid of the Source
+            q_std = self._leak_flow(Pipe, area, Fluid)
             tau = self.volume/q_std
             self.Leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
 
-    def failure_mode(name, failure_rate, flow_rate)
+    def failure_mode(name, failure_rate, flow_rate):
             tau = self.volume/flow_rate
             self.Leaks[name] = (failure_rate.to(1/ureg.hr), flow_rate, tau.to(ureg.min))
 
-    def _leak_flow(self, Pipe, Area):
+    def _leak_flow(self, Pipe, Area, Fluid):
         d = (4*Area/math.pi)**0.5 #diameter for the leak opening
         Entrance = ht.piping.Entrance(d)
         Exit = ht.piping.Exit(d)
-        TempPiping = Piping(failure_mode['Fluid_data'])
+        TempPiping = Piping(Fluid)
         TempPiping.add(Entrance,
                        Pipe,
                        Exit,
