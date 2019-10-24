@@ -2,8 +2,7 @@
 #Defining base classes for ODH analysis
 
 import math, sys, logging
-sys.path.append('D:/Personal/Python repo/')
-from heat_transfer import functions as ht
+import heat_transfer as ht
 from copy import copy
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.WARNING)
@@ -35,21 +34,29 @@ class Source:
         self.volume.ito(ureg.feet**3)
         self.isol_valve = False #By default assume there is no isolation valve that is used by ODH system
 
-    def gas_pipe_failure(self, Pipe, Fluid=None, N_welds=1, max_flow=Q_(float('inf'), ureg.kg/ureg.s)):
+    def gas_pipe_failure(self, Pipe, Fluid=None, N_welds=1, max_flow=None):
         """
         Calculate failure rate, flow rate and expected time duration of the event for gas pipe failure. Based on FESHM 4240.
         """
+        Fluid = Fluid or self.Fluid #If Fluid not defined use Fluid of the Source
         failure_rate_coeff = {'Piping': Pipe.L, 'Pipe weld': N_welds * Pipe.OD / Pipe.wall} #Failure rate coefficients; Piping failure rate is per unit of length, weld is dependent on number of welds, pipe OD and wall thickness
         for cause in ['Piping', 'Pipe weld']: #Piping and weld leaks as per Table 2
             for mode in ['Small leak', 'Large leak', 'Rupture']:
                 if Pipe.D > 2 or mode is not 'Large leak': #Large leak only for D > 2"
                     name = f'{cause} {mode.lower()}: {Pipe}'
-                    failure_rate = failure_rate_coff[cause] * TABLE_2[cause][mode]['Failure rate'] #Leak failure rate from FESHM Table 2
                     TempPipe = copy(Pipe)
                     TempPipe.L = Pipe.L / 2 #Average path for the flow will be half of piping length for gas piping
-                    area = TABLE_2[cause][mode]['Area'] #Leak area from FESHM Table 2
-                    Fluid = Fluid or self.Fluid #If Fluid not defined use Fluid of the Source
-                    q_std = min(self._leak_flow(TempPipe, area, Fluid), ht.to_standard_flow(max_flow))
+                    if mode == 'Rupture':
+                        failure_rate = failure_rate_coeff[cause] * TABLE_2[cause][mode] #Leak failure rate from FESHM Table 2
+                        area = Pipe.Area #for rupture calculate flow through available pipe area
+                    else:
+                        failure_rate = failure_rate_coeff[cause] * TABLE_2[cause][mode]['Failure rate'] #Leak failure rate from FESHM Table 2
+                        area = TABLE_2[cause][mode]['Area'] #Leak area from FESHM Table 2
+                    if max_flow is not None:
+                        q_std_max = ht.piping.to_standard_flow(max_flow, Fluid)
+                        q_std = min(self._leak_flow(TempPipe, area, Fluid), q_std_max)
+                    else:
+                        q_std = self._leak_flow(TempPipe, area, Fluid)
                     tau = self.volume/q_std
                     self.Leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
 
@@ -77,13 +84,13 @@ class Source:
         d = (4*Area/math.pi)**0.5 #diameter for the leak opening
         Entrance = ht.piping.Entrance(d)
         Exit = ht.piping.Exit(d)
-        TempPiping = Piping(Fluid)
+        TempPiping = ht.piping.Piping(Fluid)
         TempPiping.add(Entrance,
                        Pipe,
                        Exit,
         )
-        m_dot = ht.piping.m_dot(ht.P_NTP)
-        return ht.to_standard_flow(m_dot)
+        m_dot = TempPiping.m_dot(ht.P_NTP)
+        return ht.piping.to_standard_flow(m_dot, Fluid)
 
     def __add__ (self, other):
         if self.Fluid.name == other.Fluid.name:
