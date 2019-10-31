@@ -2,10 +2,9 @@ import ODH_analysis as odh
 import heat_transfer as ht
 from pprint import pprint
 Test = odh.Source('Storage dewar', ht.ThermState('helium'), ht.Q_(3390000, ht.ureg.cubic_feet)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
-Test.Fluid.update('T', ht.T_NTP, 'P', ht.P_NTP)
+Test.Fluid.update('T', ht.T_NTP, 'P', ht.ureg('10 psig'))
 Test.gas_pipe_failure(ht.piping.Pipe(1))
 pprint(Test.Leaks)
-
 #Test = Source('Test', 'helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
 #Test_2 = Test+Test+Test
 #Source.delete()

@@ -18,7 +18,10 @@ from .FESHM4240_TABLES import *
 
 #Probability of failure on demand for main cases
 lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
-#TODO State the source for ODH system PFD
+#TODO Update to value from J. Anderson's document
+PFD_ODH = Q_('2 * 10^-3')
+TRANSFER_LINE_LEAK_AREA = Q_('10 mm^2')
+SHOW_SENS = 1e-7/ureg.hr
 
 class Source:
     """Define the possible source of inert gas"""
@@ -41,8 +44,8 @@ class Source:
         Fluid = Fluid or self.Fluid #If Fluid not defined use Fluid of the Source
         failure_rate_coeff = {'Piping': Pipe.L, 'Pipe weld': N_welds * Pipe.OD / Pipe.wall} #Failure rate coefficients; Piping failure rate is per unit of length, weld is dependent on number of welds, pipe OD and wall thickness
         for cause in ['Piping', 'Pipe weld']: #Piping and weld leaks as per Table 2
-            for mode in ['Small leak', 'Large leak', 'Rupture']:
-                if Pipe.D > 2 or mode is not 'Large leak': #Large leak only for D > 2"
+            for mode in TABLE_2[cause].keys():
+                if Pipe.D > 2 or mode != 'Large leak': #Large leak only for D > 2"
                     name = f'{cause} {mode.lower()}: {Pipe}'
                     TempPipe = copy(Pipe)
                     TempPipe.L = Pipe.L / 2 #Average path for the flow will be half of piping length for gas piping
@@ -60,25 +63,29 @@ class Source:
                     tau = self.volume/q_std
                     self.Leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
 
-    def transfer_line_failure(Pipe, Fluid=None, N_lines=1):
+    def transfer_line_failure(self, Pipe, Fluid=None, N_lines=1):
         """
         Calculate failure rate, flow rate and expected time duration of the event for transfer line failure. Based on FESHM 4240.
         """
-        area_cases = {'Leak': Q_('10 mm^2'), #Leak area, assumed based on piping leak areas in Table 2
-                'Rupture': Pipe.Area, #Full flow through the transfer line
+        area_cases = {'Leak': TRANSFER_LINE_LEAK_AREA, #Leak area, assumed based on piping leak areas in Table 2
+                      'Rupture': Pipe.Area, #Full flow through the transfer line
                 }
-        for mode in ['Leak', 'Rupture']:
+        for mode in TABLE_1['Fluid line']:
             name = f'Fluid line {mode.lower()}: {Pipe}'
             failure_rate = N_lines * TABLE_1['Fluid line'][mode]
             area_cases = Area[mode]
             Fluid = Fluid or self.Fluid #If Fluid not defined use Fluid of the Source
             q_std = self._leak_flow(Pipe, area, Fluid)
             tau = self.volume/q_std
-            self.Leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
+            self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
 
-    def failure_mode(name, failure_rate, flow_rate):
-            tau = self.volume/flow_rate
-            self.Leaks[name] = (failure_rate.to(1/ureg.hr), flow_rate, tau.to(ureg.min))
+    def failure_mode(self, name, failure_rate, flow_rate):
+        tau = self.volume/flow_rate
+        self.Leaks[name] = (failure_rate.to(1/ureg.hr), flow_rate, tau.to(ureg.min))
+
+    def constant_leak(self, name, flow_rate):
+        tau = self.volume/flow_rate
+        self.leaks[name] = (None, flow_rate, tau.to(ureg.min))
 
     def _leak_flow(self, Pipe, Area, Fluid):
         d = (4*Area/math.pi)**0.5 #diameter for the leak opening
@@ -92,36 +99,33 @@ class Source:
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, Fluid)
 
-    def __add__ (self, other):
+    def __add__(self, other):
         if self.Fluid.name == other.Fluid.name:
             total_volume = self.volume + other.volume
-            TempState = ht.ThermState(name=self.Fluid.name, backend=self.Fluid.backend)
-            TempState.update('T', ht.T_NTP, 'P', ht.P_NTP)
-            return Source(None, '', TempState, total_volume) 
+            return Source(f'self.name+other.name', Fluid, total_volume)
         else:
             logger.error ('\nBoth volumes should contain the same fluid')
+            return None
 
     def __mul__(self, num):
-        self.N *= num
-        return self
+        Copy = copy(self)
+        Copy.N *= num
+        return Copy
 
     def __rmul__(self, num):
-        self.N *= num
-        return self
+        Copy = copy(self)
+        Copy.N *= num
+        return Copy
 
-    def __str__ (self):
-        if self.name:
-            return self.name
-        else:
-            return ''
+    def __str__(self):
+        return self.name
 
-    def print (self):
-        if self.name:
-            print('{} is an ODH source of {} with volume of {:.3~}'.format(self.name, self.Fluid.name, self.volume))
+    def print(self):
+        print('{} is an ODH source of {} with volume of {:.3~}'.format(self.name, self.Fluid.name, self.volume))
 
-    def print_leaks (self):
+    def print_leaks(self):
         for key in sorted(self.Leaks.keys()):
-            print ('Failure mode: ' + key + ' pipe')
+            print ('Failure mode: '+key)
             print ('Failure rate: {:.2~}'.format(self.Leaks[key][0]))
             print ('Flow rate: {:.2~}'.format(self.Leaks[key][1].to(ureg.ft**3/ureg.min)))
             print ('Event duration: {:.2~}'.format(self.Leaks[key][2]))
@@ -132,78 +136,27 @@ class Volume:
     '''
     Volume/building affected by inert gases.
     '''
-    show_sens = 1e-7/ureg.hr
-    def __init__  (self, name, Fluids, volume):
+    def __init__(self, name, fluid_names, volume):
         self.name = name
-        self.Fluids = Fluids #For gas stratification gases that affect the layer
         self.volume = volume
+        self.PFD_ODH = PFD_ODH # Default value for ODH system failure
+        #Main method of protection against ODH is a complex system involving ODH heads and chassis or PLCs that power louvers and fans (which may fail separately). PFD_ODH describes the probability of failure of this system to register, transmit and respond to the reduction of oxygen concetration of the volume. Default value is based on analysis performed by J. Anderson and presented ... When necessary, the value can be redefined. One must take care calculating PFD_ODH as it may be complicated to properly add probabilities.
 
-    def __str__ (self):
-            return self.name
-
-    def fan_fail (self, Test_period, Fail_rate, Q_fan, N_fans, Mean_repair_time=0*ureg.hr):
-        '''
-        Calculate (Probability, flow) pairs for all combinations of fans working. All fans are expected to have same volume flow
-        '''
-        Fan_flowrates = []
-        for m in range(N_fans+1):
-            P_m_fan_work = prob_m_of_n(m, N_fans, Test_period, Fail_rate, Mean_repair_time) #Probability of exactly m units starting
-            Fan_flowrates.append((P_m_fan_work, Q_fan*m))
-        self.Fan_flowrates = Fan_flowrates
-        self.mdt = Test_period/(N_fans+1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
-
-    def PFD_system (self, *PFDs):
-        '''
-        Calculate total probability of an ODH system failure for given probabilities of different element failures.
-        '''
-        PFD_system_on = 1
-        for PFD in PFDs:
-            PFD_system_on *= 1-PFD 
-        return 1-PFD_system_on 
-
-    def fatality_prob(self, O2_conc):
-        if O2_conc >= 0.18: #Lowest oxygen concentration above 18%
-            Fi = 0
-        elif O2_conc <= 0.088: #8.8% of oxygen is assumed to be 100% fatal
-            Fi = 1
-        else:
-            Fi = 10**(6.5-76*O2_conc) #Fi formula, reverse engineered using 8.8% and 18% thresholds; These values are used in FESHM chapter to approximate O2 partial pressure
-        return Fi
-
-    def odh_class(self):
-        if self.phi < 1e-7/ureg.hr:
-            return 0
-        elif self.phi < 1e-5/ureg.hr:
-            return 1
-        elif self.phi < 1e-3/ureg.hr:
-            return 2
-        else:
-            logger.error ('ODH fatality rate is too high. Please, check calculations')
-
-    def odh (self, Power = True):
+    def odh(self, sources, power_outage=False):
         '''
         Calculate ODH fatality rate and recommend ODH class designation.
         Uses list of odh.source instances.
         Power specifies whether there is a power outage. Default is no outage.
         '''
         self.phi = 0 #fatality rate
-        PFD_power_build = Power*PFD['power']+(not Power) #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
-        for source in Source.instances: #Sources is a list of Source objects
-            if source.fluid not in self.Fluids:
-                continue
-            if len (source.Leaks) == 0:
-                if self.source_safe(source):
-                    if Power: #to avoid excess output for power outage case
-                        print ("{} doesn't contain enough gas to cause fatality in {}\n".format(source.name, self.name))
-                    continue
-                else:
-                    logger.warning('Potentially dangerous for {} source "{}" has no defined leaks!\n'.format(self.name, source.name))
-            PFD_sol_source = source.isol_valve*PFD['sol']+(not source.isol_valve) #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
-            for cause, leak in source.Leaks.items():
-                (P_leak, q_leak, tau) = leak
-                if hasattr(P_leak, 'dimensionality'):
-                    P_i = P_leak*(PFD_power_build*PFD_sol_source+(1-PFD_power_build)*PFD['odh']) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
-                    #The previous equation is equal to P_i = P_leak*self.PFD_system(PFD_power, PFD_odh) probability of power or ODH system failure: fans do not start
+        PFD_power_build = power_outage or TABLE_1['Electrical Power Failure']['Demand rate'] #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
+        for source in sources:
+            PFD_sol_source = not source.isol_valve or TABLE_2['Valve, solenod']['Failure to operate'] #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
+            for failure_mode, leak in source.leaks.items():
+                (leak_failure_rate, q_leak, tau) = leak
+                if leak_failure_rate is not None:
+                    # Calculate failure rate of leak occuring and no safety response occuring due to power failure and isolation solenoid failure or ODH system failure
+                     unresponded_failure_rate = leak_failure_rate * (PFD_power_build*PFD_sol_source+(1-PFD_power_build)*self.PFD_ODH) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
@@ -226,7 +179,41 @@ class Volume:
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
                     self.info(source, self.show_sens, 'Constant leak', 0, 'Constant', P_i, F_i, Power, q_leak, 0*ureg('ft^3/min'))
-                    #TODO Constant leak analysis using HVAC ACH
+                    #TODO Constant leak analysis using HVAC ACH (see links in brain or mac FF)
+
+    def __str__(self):
+            return self.name
+
+    def fan_fail(self, Test_period, Fail_rate, Q_fan, N_fans, Mean_repair_time=0*ureg.hr):
+        '''
+        Calculate (Probability, flow) pairs for all combinations of fans working. All fans are expected to have same volume flow
+        '''
+        #TODO add fans with different volumetric rates
+        Fan_flowrates = []
+        for m in range(N_fans+1):
+            P_m_fan_work = prob_m_of_n(m, N_fans, Test_period, Fail_rate, Mean_repair_time) #Probability of exactly m units starting
+            Fan_flowrates.append((P_m_fan_work, Q_fan*m))
+        self.Fan_flowrates = Fan_flowrates
+        self.mdt = Test_period/(N_fans+1)+Mean_repair_time #Mean Down Time for fan system, only 1 fan required to work - used for constant leak calculation
+
+    def fatality_prob(self, O2_conc):
+        if O2_conc >= 0.18: #Lowest oxygen concentration above 18%
+            Fi = 0
+        elif O2_conc <= 0.088: #8.8% of oxygen is assumed to be 100% fatal
+            Fi = 1
+        else:
+            Fi = 10**(6.5-76*O2_conc) #Fi formula, reverse engineered using 8.8% and 18% thresholds; These values are used in FESHM chapter to approximate O2 partial pressure
+        return Fi
+
+    def odh_class(self):
+        if self.phi < 1e-7/ureg.hr:
+            return 0
+        elif self.phi < 1e-5/ureg.hr:
+            return 1
+        elif self.phi < 1e-3/ureg.hr:
+            return 2
+        else:
+            logger.error ('ODH fatality rate is too high. Please, check calculations')
 
     def info(self, source, sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan=None):
         phi = P_i*F_i
