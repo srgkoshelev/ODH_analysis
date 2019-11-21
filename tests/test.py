@@ -5,6 +5,35 @@ Test = odh.Source('Storage dewar', ht.ThermState('helium'), ht.Q_(3390000, ht.ur
 Test.Fluid.update('T', ht.T_NTP, 'P', ht.ureg('10 psig'))
 Test.gas_pipe_failure(ht.piping.Pipe(1))
 pprint(Test.Leaks)
+print('\nLogic test')
+def and_(list1, list2):
+    list3 = []
+    for x,y in zip(list1, list2):
+        list3.append(bool(x and y))
+    return list3
+
+def or_(list1, list2):
+    list3 = []
+    for x,y in zip(list1, list2):
+        list3.append(bool(x or y))
+    return list3
+
+def not_(list_):
+    list2 = []
+    for x in list_:
+        list2.append(not x)
+    return list2
+P = (0,1,0,1,0,1,0,1)
+O = (0,0,1,1,0,0,1,1)
+S = (0,0,0,0,1,1,1,1)
+
+T = or_(and_(P,S),and_(not_(P),O))
+F = not_(or_(P,O))
+print(T)
+print(F)
+
+print(or_(T,F))
+
 #Test = Source('Test', 'helium', Q_(33900, ureg.cubic_feet), 'vapor', Q_(0, ureg.psig)) #blowdown from 12 psig to 1 atmosphere, estimated by R. Rabehl, TID-N-3A, p. 7
 #Test_2 = Test+Test+Test
 #Source.delete()

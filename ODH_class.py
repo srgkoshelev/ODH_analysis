@@ -99,6 +99,13 @@ class Source:
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, Fluid)
 
+    def sol_PFD(self):
+        """Calculate probability of failure on demand (PFD) for solenoid valve.
+
+        If the source doesn't have isolating solenoid valve this probability is 1.
+        """
+        return (not self.isol_valve) or TABLE_2['Valve, solenod']['Failure to operate']
+
     def __add__(self, other):
         if self.Fluid.name == other.Fluid.name:
             total_volume = self.volume + other.volume
@@ -140,6 +147,7 @@ class Volume:
         self.name = name
         self.volume = volume
         self.PFD_ODH = PFD_ODH # Default value for ODH system failure
+        self.failure_modes = []
         #Main method of protection against ODH is a complex system involving ODH heads and chassis or PLCs that power louvers and fans (which may fail separately). PFD_ODH describes the probability of failure of this system to register, transmit and respond to the reduction of oxygen concetration of the volume. Default value is based on analysis performed by J. Anderson and presented ... When necessary, the value can be redefined. One must take care calculating PFD_ODH as it may be complicated to properly add probabilities.
 
     def odh(self, sources, power_outage=False):
@@ -148,38 +156,38 @@ class Volume:
         Uses list of odh.source instances.
         Power specifies whether there is a power outage. Default is no outage.
         '''
-        self.phi = 0 #fatality rate
+        self.phi = 0 # Recalculate fatality rate
         PFD_power_build = power_outage or TABLE_1['Electrical Power Failure']['Demand rate'] #Probability of power failure in the building: PFD_power if no outage, 1 if there is outage
         for source in sources:
-            PFD_sol_source = not source.isol_valve or TABLE_2['Valve, solenod']['Failure to operate'] #If there is an isolation valve, probability = PFD_sol; if there are no valve the probability to fail = 1 i.e. the flow cannot be stopped
             for failure_mode, leak in source.leaks.items():
                 (leak_failure_rate, q_leak, tau) = leak
                 if leak_failure_rate is not None:
                     # Calculate failure rate of leak occuring and no safety response occuring due to power failure and isolation solenoid failure or ODH system failure
-                     unresponded_failure_rate = leak_failure_rate * (PFD_power_build*PFD_sol_source+(1-PFD_power_build)*self.PFD_ODH) #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
+                    P_no_response = PFD_power_build*source.sol_PFD + (1-PFD_power_build)*self.PFD_ODH #power and solenoid failure or power is on and ODH system fails: situation, when leak continues and fans do not start
+                    P_i = leak_failure_rate *  P_no_response
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau) #is limited by ammount of inert gas the source has; fans are not operational
                     F_i = self.fatality_prob(O2_conc)
                     self.phi += P_i*F_i
-                    self.info(source, self.show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak)
+                    self.failure_modes.append((source, failure_mode, O2_conc,
+                                               leak_failure_rate, P_i, F_i,
+                                               power_outage, q_leak))
                     if hasattr(self, 'Fan_flowrates'):
                         for (P_fan, Q_fan) in self.Fan_flowrates:
-                            P_i = P_leak*(1-self.PFD_system(PFD_power_build, PFD['odh']))*PFD_sol_source*P_fan #Probability of leak occuring, ODH system/power working, solenoid not closing and m number of fans working; closed solenoid cuts off the supply thus phi = 0
-                            #Above is equal to P_i = P_leak*(1-self.PFD_system(PFD_power, PFD_odh))*P_fan - Probability of leak occuring, ODH system/power working and m number of fans working
+                            P_response = (1-PFD_power_build) * (1-self.PFD_ODH) * P_fan #Probability of power on, ODH system working, and m number of fans with flow rate Q_fan on.
+                            P_i = leak_failure_rate * P_response
                             O2_conc = conc_vent (self.volume, q_leak, Q_fan, tau)
                             F_i = self.fatality_prob(O2_conc)
                             self.phi += P_i*F_i
-                            self.info(source, self.show_sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan)
+                            self.failure_modes.append((source, failure_mode, O2_conc, leak_failure_rate, P_i, F_i, power_outage, q_leak))
                     else:
                         raise Exception ('Need to calculate Fan flowrates first')
                 else:
-                    #Assuming constant leak is small enough to be completely dominated by a single fan
-                    lambda_const = lambda_power + lambda_odh + self.Fan_flowrates[0][0]/self.mdt #Fan failure rate = PFD_0fans/MDT_fans
-                    P_i = lambda_const #Failure rate for protection against constant leak
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau)
                     F_i = self.fatality_prob(O2_conc)
-                    self.phi += P_i*F_i
-                    self.info(source, self.show_sens, 'Constant leak', 0, 'Constant', P_i, F_i, Power, q_leak, 0*ureg('ft^3/min'))
-                    #TODO Constant leak analysis using HVAC ACH (see links in brain or mac FF)
+                    if F_i > 0:
+                        # TODO finish error handling
+                        logger.error('Constant leak can be fatal: {source}, {}')
+                    self.failure_modes.append((source, failure_mode, O2_conc, leak_failure_rate, P_i, F_i, power_outage, q_leak))
 
     def __str__(self):
             return self.name
@@ -215,7 +223,7 @@ class Volume:
         else:
             logger.error ('ODH fatality rate is too high. Please, check calculations')
 
-    def info(self, source, sens, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan=None):
+    def info(self, source, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan=None):
         phi = P_i*F_i
         if phi >= sens and Power:
             print ('Major ODH cause with fatality rate > {:.2~}'.format(sens))
