@@ -20,6 +20,9 @@ from .FESHM4240_TABLES import *
 lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the most correct value I have seen in use
 #TODO Update to value from J. Anderson's document
 PFD_ODH = Q_('2 * 10^-3')
+PFD_SOLENOID = TABLE_2['Valve, solenoid']['Failure to operate']
+PFD_POWER = TABLE_1['Electrical Power Failure']['Demand rate']
+LAMBDA_FAN = TABLE_2['Fan']['Failure to run']
 TRANSFER_LINE_LEAK_AREA = Q_('10 mm^2')
 SHOW_SENS = 1e-7/ureg.hr
 
