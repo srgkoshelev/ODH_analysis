@@ -31,10 +31,10 @@ class Source:
     def __init__(self, name, Fluid, volume, N=1):
         self.name = name
         self.Fluid = Fluid
-        self.Leaks = {}
+        self.leaks = {}
         self.N = N #Number of sources if multiple exist, e.g. gas cylinders. Increases probability of failure by N.
         #Calculating volume at standard conditions
-        TempState = copy(Fluid)
+        TempState = ht.ThermState(Fluid.name, backend=Fluid.backend)
         TempState.update('T', ht.T_NTP, 'P', ht.P_NTP)
         self.volume = volume*Fluid.Dmass/TempState.Dmass
         self.volume.ito(ureg.feet**3)
