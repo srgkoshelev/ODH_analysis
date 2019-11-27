@@ -268,53 +268,64 @@ class Volume:
             return 2
         else:
             logger.error ('ODH fatality rate is too high. Please, check calculations')
+            return None
 
-    def info(self, source, cause, O2_conc, P_leak, P_i, F_i, Power, q_leak, Q_fan=None):
-        phi = P_i*F_i
-        if phi >= sens and Power:
-            print ('Major ODH cause with fatality rate > {:.2~}'.format(sens))
-            print ('Volume: {}, {:.2~}'.format(self, self.volume.to(ureg.ft**3)))
-            print ('Source: '+source.name)
-            if q_leak and Q_fan:
-                print ('Failure: '+cause)
-            else:
-                print ('Failure: '+cause+' and No power')
-            print ('Oxygen concentration: {:.0%}, {:.0%} percent of norm'.format(O2_conc, O2_conc/0.21))
-            if type(P_leak) == str:
-                print ('Leak prob rate: {}'.format(P_leak))
-            else:
-                print ('Leak prob rate: {:.2~}'.format(P_leak))
-            print ('System prob: {:.2%}'.format(P_i/P_leak))
-            print ('Failure rate: {:.2~}'.format(P_i))
-            print ('Leak rate: {:.2~}'.format(q_leak))
-            if Q_fan:
-                print ('Fan rate: {:.2~}'.format(Q_fan))
-            print ('Fatality prob: {:.2g}'.format(F_i))
-            print ('Fatality rate: {:.2~}\n'.format(P_i*F_i))
+    def report(self, brief=True):
+        print('#'*80)
+        print(f'ODH report for {self}')
+        print('-'*40)
+        for failure_mode in self.failure_modes:
+            phi_i = failure_mode[0]
+            source = failure_mode[1]
+            failure_mode_name = failure_mode[2]
+            O2_conc = failure_mode[3]
+            leak_failure_rate = failure_mode[4]
+            P_i = failure_mode[5]
+            F_i = failure_mode[6]
+            power_outage = failure_mode[7]
+            q_leak = failure_mode[8]
+            tau = failure_mode[9]
+            Q_fan = failure_mode[10]
+            if phi_i >= SHOW_SENS or not brief:
+                print (f'\n Source: {source.name}')
+                print (f' Failure: {failure_mode_name}')
+                print (f' Fatality rate: {phi_i:.2~}')
+                print (f' Building is powered: {not power_outage}')
+                print (f' Oxygen concentration: {O2_conc:.0%}, {O2_conc/0.21:.0%} percent of norm')
+                print (f' Leak failure rate: {leak_failure_rate:.3g~}')
+                print (f' ODH protection PFD: {(P_i/leak_failure_rate).to(ureg.dimensionless):.2~}')
+                print (f' Total failure rate: {P_i:.2~}')
+                print (f' Leak rate: {q_leak:.2~}')
+                print (f' Event duration: {tau:.2~}')
+                print (f' Fan rate: {Q_fan:.2~}')
+                print (f' Fatality prob: {F_i:.2g}')
+
+    def __str__(self):
+            return (f'Volume: {self.name}, {self.volume.to(ureg.ft**3):.2~}')
 
 
-    def source_safe(self, source, escape = True):
-        '''
-        Estimate the impact of the Source vokume on oxygen concetration. Smaller sources might not be able to drop oxygen concentration to dangerous levels.
-        '''
-        if escape == True: #if mixed air is allowed to escape within considered volume
-            O2_conc = 0.21*self.volume/(self.volume+source.volume)
-        else: #worst case; inert gas is trapped and expells the air outside the considered volume
-            O2_conc = 0.21*(1-source.volume/self.volume)
-        return self.fatality_prob(O2_conc) == 0
+    #def source_safe(self, source, escape = True):
+    #    """
+    #    Estimate the impact of the Source volume on oxygen concetration. Smaller sources might not be able to drop oxygen concentration to dangerous levels.
+    #    """
+    #    if escape == True: #if mixed air is allowed to escape within considered volume
+    #        O2_conc = 0.21*self.volume/(self.volume+source.volume)
+    #    else: #worst case; inert gas is trapped and expells the air outside the considered volume
+    #        O2_conc = 0.21*(1-source.volume/self.volume)
+    #    return self._fatality_prob(O2_conc) == 0
 
 
-def prob_m_of_n (m, n, T, l, MRT=0*ureg.hr):
-    '''
+def prob_m_of_n (m, n, T, l):
+    """
     Calculate the probability of m out of n units working.
     inputs:
         T - test period, hr
         MRT - mean repair time (when not negligible compared to test period), hr
         l = lambda = failure rate for fan, 1/hr
-    '''
+    """
     C_n_m = math.factorial(n)/(math.factorial(n-m)*math.factorial(m))
     PFD_one_unit = l*T
-    F_adj = 1/(n-m+1)+MRT/T #Adjustment coefficient: T/(n-m+1) will be average failure reveal time (D. Smith, Reliability..., p. 108); MRT is added to reveal time to get total unavailability time
+    F_adj = 1/(n-m+1) #Adjustment coefficient: T/(n-m+1) will be average failure reveal time (D. Smith, Reliability..., p. 108)
     m_of_n = C_n_m*(PFD_one_unit)**(n-m)*(1-PFD_one_unit)**m*F_adj #see ED00007314 for details
     return m_of_n
 
