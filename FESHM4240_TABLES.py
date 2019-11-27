@@ -8,7 +8,7 @@ TABLE_1 = {'Compressor':
            {'Loss of vacuum': Q_('1 * 10^-6 / hr')},
            'Electrical Power Failure':
            {'Time rate': Q_('1 * 10^-4 / hr'),
-            'Demand rate': Q_('3 * 10^-4 / hr')},
+            'Demand rate': Q_('3 * 10^-4')},
            'Fluid line':
            {'Leak': Q_('5 * 10^-7 /hr'),
             'Rupture': Q_('2 * 10^-8 / hr')},
