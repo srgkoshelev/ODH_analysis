@@ -1,4 +1,3 @@
-#!python3
 #Defining base classes for ODH analysis
 
 import math, sys, logging
@@ -22,6 +21,7 @@ lambda_odh = 2.3e-6/ureg.hr #from CMTF Hi Bay ODH EN01878 pp. 27-28. That is the
 PFD_ODH = Q_('2 * 10^-3')
 PFD_SOLENOID = TABLE_2['Valve, solenoid']['Failure to operate']
 PFD_POWER = TABLE_1['Electrical Power Failure']['Demand rate']
+PFD_DEWAR_INSULATION = TABLE_1['Dewar']['Loss of vacuum']
 LAMBDA_FAN = TABLE_2['Fan']['Failure to run']
 TRANSFER_LINE_LEAK_AREA = Q_('10 mm^2')
 SHOW_SENS = 1e-7/ureg.hr
@@ -82,7 +82,18 @@ class Source:
             tau = self.volume/q_std
             self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
 
+    def dewar_insulation_failure(self, flow_rate, Fluid=None):
+        """Calculate failure rate, flow rate and expected time duration of the failure event for the dewar insulation failure.
+
+        Based on FESHM4240."""
+        failure_rate = PFD_DEWAR_INSULATION
+        if Fluid is None:
+            Fluid = self.Fluid
+        tau = self.volume/flow_rate
+        self.leaks['Dewar insulation failure'] = (failure_rate.to(1/ureg.hr), flow_rate, tau.to(ureg.min))
+
     def failure_mode(self, name, failure_rate, flow_rate):
+        """General failure mode."""
         tau = self.volume/flow_rate
         self.leaks[name] = (failure_rate.to(1/ureg.hr), flow_rate, tau.to(ureg.min))
 
@@ -289,12 +300,12 @@ class Volume:
             if phi_i >= SHOW_SENS or not brief:
                 print (f'\n Source: {source.name}')
                 print (f' Failure: {failure_mode_name}')
-                print (f' Fatality rate: {phi_i:.2~}')
+                print (f' Fatality rate: {phi_i.to(1/ureg.hr):.2~}')
                 print (f' Building is powered: {not power_outage}')
                 print (f' Oxygen concentration: {O2_conc:.0%}, {O2_conc/0.21:.0%} percent of norm')
                 print (f' Leak failure rate: {leak_failure_rate:.3g~}')
                 print (f' ODH protection PFD: {(P_i/leak_failure_rate).to(ureg.dimensionless):.2~}')
-                print (f' Total failure rate: {P_i:.2~}')
+                print (f' Total failure rate: {P_i.to(1/ureg.hr):.2~}')
                 print (f' Leak rate: {q_leak:.2~}')
                 print (f' Event duration: {tau:.2~}')
                 print (f' Fan rate: {Q_fan:.2~}')
