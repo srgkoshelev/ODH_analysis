@@ -189,7 +189,6 @@ class Volume:
         self.Q_fan = Q_fan
         self.N_fans = N_fans
         self.Test_period = Test_period
-        self.failure_modes = []
 
     def odh(self, sources, power_outage=False):
         """
@@ -198,6 +197,7 @@ class Volume:
         Power specifies whether there is a power outage. Default is no outage.
         """
         self.phi = 0  # Recalculate fatality rate
+        self.failure_modes = []
         # Probability of power failure in the building:
         # PFD_power if no outage, 1 if there is outage
         PFD_power_build = power_outage or PFD_POWER
@@ -282,7 +282,7 @@ class Volume:
         Calculate (Probability, flow) pairs for all combinations of fans
         working. All fans are expected to have same volume flow.
         """
-        # TODO add fans with different volumetric rates
+        # TODO add fans with different volumetric rates (see report as well)
         Fail_rate = self.lambda_fan
         Fan_flowrates = []
         for m in range(N_fans+1):
@@ -298,8 +298,6 @@ class Volume:
             Fi = 1
         else:
             # Fi formula, reverse engineered using 8.8% and 18% thresholds
-            # These values are used in FESHM chapter to approximate O2 partial
-            # pressure
             Fi = 10**(6.5-76*O2_conc)
         return Fi
 
@@ -329,6 +327,7 @@ class Volume:
             power_outage = failure_mode[7]
             q_leak = failure_mode[8]
             tau = failure_mode[9]
+            N_fan = int(failure_mode[10] / self.Q_fan)
             Q_fan = failure_mode[10]
             if phi_i >= SHOW_SENS or not brief:
                 print(f'\n Source: {source.name}')
@@ -343,6 +342,7 @@ class Volume:
                 print(f' Total failure rate: {P_i.to(1/ureg.hr):.2~}')
                 print(f' Leak rate: {q_leak:.2~}')
                 print(f' Event duration: {tau:.2~}')
+                print(f' Fans working: {N_fan:}')
                 print(f' Fan rate: {Q_fan:.2~}')
                 print(f' Fatality prob: {F_i:.2g}')
 
@@ -387,7 +387,7 @@ def conc_vent(V, R, Q, t):
     C - oxygen concentration in confined space
     Case B
     """
-    if Q > 0:
+    if Q > Q_('0 ft**3/min'):
         C = 0.21/(Q+R) * (Q+R*math.e**-(Q+R)/V*t)
     elif abs(Q) <= R:
         C = 0.21*math.e**-(R/V*t)
