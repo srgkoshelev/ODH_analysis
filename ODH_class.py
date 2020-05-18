@@ -87,8 +87,10 @@ class Source:
         tau = self.volume/flow_rate
         self.leaks['Dewar insulation failure'] = (failure_rate.to(1/ureg.hr), flow_rate, tau.to(ureg.min))
 
-    def failure_mode(self, name, failure_rate, flow_rate):
+    def failure_mode(self, name, failure_rate, flow_rate, Fluid=None):
         """General failure mode."""
+        Fluid = Fluid or self.Fluid  # If Fluid not defined use Fluid of the Source
+        flow_rate = ht.piping.to_standard_flow(flow_rate, Fluid)
         tau = self.volume/flow_rate
         self.leaks[name] = (failure_rate.to(1/ureg.hr), flow_rate, tau.to(ureg.min))
 
@@ -154,7 +156,6 @@ class Volume:
     """
     def __init__(self, name, volume, Q_fan, N_fans, Test_period):
         """
-
         Main method of protection against ODH is a complex system involving ODH heads and chassis or PLCs that power louvers and fans (which may fail separately). PFD_ODH describes the probability of failure of this system to register, transmit and respond to the reduction of oxygen concetration of the volume. Default value is based on analysis performed by J. Anderson and presented ... When necessary, the value can be redefined. One must take care calculating PFD_ODH as it may be complicated to properly add probabilities.
 """
         self.name = name
@@ -172,7 +173,7 @@ class Volume:
         Uses list of odh.source instances.
         Power specifies whether there is a power outage. Default is no outage.
         """
-        self.phi = 0  #  Recalculate fatality rate
+        self.phi = 0  # Recalculate fatality rate
         # Probability of power failure in the building:
         # PFD_power if no outage, 1 if there is outage
         PFD_power_build = power_outage or PFD_POWER
@@ -182,11 +183,13 @@ class Volume:
         for source in sources:
             for failure_mode_name, leak in source.leaks.items():
                 leak_failure_rate = leak[0]
-                # TODO move constant leak to _fatality functions
-                if leak_failure_rate is not None:  #  None for constant leak
-                    self._fatality_no_response(source, failure_mode_name, leak, source.sol_PFD, PFD_power_build)
-                    self._fatality_fan_powered(source, failure_mode_name, leak, PFD_power_build)
+                if leak_failure_rate is not None:  # None for constant leak
+                    self._fatality_no_response(source, failure_mode_name, leak,
+                                               source.sol_PFD, PFD_power_build)
+                    self._fatality_fan_powered(source, failure_mode_name, leak,
+                                               PFD_power_build)
                 else:
+                    # TODO rework constant leak (will throw errors)
                     O2_conc = conc_vent (self.volume, q_leak, 0*ureg('ft^3/min'), tau)
                     F_i = self._fatality_prob(O2_conc)
                     if F_i > 0:
@@ -215,18 +218,18 @@ class Volume:
         (leak_failure_rate, q_leak, tau) = leak
         P_no_response = float(PFD_power_build)*float(sol_PFD) +\
             (1-PFD_power_build)*self.PFD_ODH
-        P_i = leak_failure_rate *  P_no_response
+        P_i = leak_failure_rate * P_no_response
         Q_fan = 0 * ureg('ft^3/min')
-        O2_conc = conc_vent (self.volume, q_leak,
-                                Q_fan, tau)
+        O2_conc = conc_vent(self.volume, q_leak, Q_fan, tau)
         F_i = self._fatality_prob(O2_conc)
         phi_i = P_i*F_i
         self.phi += phi_i
         self.failure_modes.append((phi_i, source, failure_mode_name, O2_conc,
-                                    leak_failure_rate, P_i, F_i,
-                                    PFD_power_build==1, q_leak, tau, Q_fan))
+                                   leak_failure_rate, P_i, F_i,
+                                   PFD_power_build==1, q_leak, tau, Q_fan))
 
-    def _fatality_fan_powered(self, source, failure_mode_name, leak, PFD_power_build):
+    def _fatality_fan_powered(self, source, failure_mode_name, leak,
+                              PFD_power_build):
         """Calculate fatality rates for fan failure on demand.
 
         Calculate fatality rates for the case of ODH system responding and
