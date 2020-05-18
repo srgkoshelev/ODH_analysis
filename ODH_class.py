@@ -387,7 +387,7 @@ def conc_vent(V, R, Q, t):
     C - oxygen concentration in confined space
     Case B
     """
-    if Q > Q_('0 ft**3/min'):
+    if Q > 0:
         C = 0.21/(Q+R) * (Q+R*math.e**-(Q+R)/V*t)
     elif abs(Q) <= R:
         C = 0.21*math.e**-(R/V*t)
