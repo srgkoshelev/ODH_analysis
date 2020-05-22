@@ -1,4 +1,4 @@
-#Defining failure rates as per FESHM 4240 chapter
+# Defining failure rates as per FESHM 4240 chapter
 from .ODH_class import Q_
 
 TABLE_1 = {'Compressor':
