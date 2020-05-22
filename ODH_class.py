@@ -340,21 +340,22 @@ class Volume:
             N_fan = int(failure_mode[10] / self.Q_fan)
             Q_fan = failure_mode[10]
             if phi_i >= SHOW_SENS or not brief:
-                print(f'\n Source: {source.name}')
-                print(f' Failure: {failure_mode_name}')
-                print(f' Fatality rate: {phi_i.to(1/ureg.hr):.2~}')
-                print(f' Building is powered: {not power_outage}')
+                print()
+                print(f' Source:               {source.name}')
+                print(f' Failure:              {failure_mode_name}')
+                print(f' Fatality rate:        {phi_i.to(1/ureg.hr):.2~}')
+                print(f' Building is powered:  {not power_outage}')
                 print(f' Oxygen concentration: {O2_conc:.0%}, '
                       f'{O2_conc/0.21:.0%} percent of norm')
-                print(f' Leak failure rate: {leak_failure_rate:.3g~}')
-                print(' ODH protection PFD: '
+                print(f' Leak failure rate:    {leak_failure_rate:.3g~}')
+                print(' ODH protection PFD:    '
                       f'{(P_i/leak_failure_rate).to(ureg.dimensionless):.2~}')
-                print(f' Total failure rate: {P_i.to(1/ureg.hr):.2~}')
-                print(f' Leak rate: {q_leak:.2~}')
-                print(f' Event duration: {tau:.2~}')
-                print(f' Fans working: {N_fan:}')
-                print(f' Fan rate: {Q_fan:.2~}')
-                print(f' Fatality prob: {F_i:.2g}')
+                print(f' Total failure rate:   {P_i.to(1/ureg.hr):.2~}')
+                print(f' Leak rate:            {q_leak:.2~}')
+                print(f' Event duration:       {tau:.2~}')
+                print(f' Fans working:         {N_fan:}')
+                print(f' Fan rate:             {Q_fan:.2~}')
+                print(f' Fatality prob:        {F_i:.2g}')
 
     def __str__(self):
         return (f'Volume: {self.name}, {self.volume.to(ureg.ft**3):.2~}')
