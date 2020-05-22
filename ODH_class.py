@@ -313,9 +313,14 @@ class Volume:
             return None
 
     def report(self, brief=True):
-        print('#'*80)
-        print(f'ODH report for {self}')
-        print('-'*40)
+        title = f'ODH report for {self}'
+        padding = len(title) + 10
+        print('#'*padding)
+        print(title)
+        print('-'*padding)
+        if brief:
+            print('Printing brief ODH report')
+            print(f'Only leaks with Fatality rate > {SHOW_SENS} are shown')
         for failure_mode in self.failure_modes:
             phi_i = failure_mode[0]
             source = failure_mode[1]
