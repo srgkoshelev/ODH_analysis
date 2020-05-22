@@ -409,7 +409,7 @@ def conc_final(V, R, Q):
     C - oxygen concentration in confined space
     Case B
     """
-    if Q > 0*ureg('ft^3/min'):
+    if Q > 0:
         C = 0.21/(Q+R)*Q
     elif abs(Q) <= abs(R):
         C = 0
