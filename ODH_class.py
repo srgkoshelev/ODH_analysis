@@ -79,21 +79,23 @@ class Source:
                     self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
                                         tau.to(ureg.min))
 
-    def transfer_line_failure(self, Pipe, Fluid=None, N_lines=1):
+    def transfer_line_failure(self, Pipe, Fluid=None, N=1):
         """
-        Calculate failure rate, flow rate and expected time duration of the event for transfer line failure. Based on FESHM 4240.
+        Calculate failure rate, flow rate and expected time duration of
+        the event for transfer line failure. Based on FESHM 4240.
         """
-        area_cases = {'Leak': TRANSFER_LINE_LEAK_AREA,  # Leak area, assumed based on piping leak areas in Table 2
-                      'Rupture': Pipe.area,  # Full flow through the transfer line
-                }
+        area_cases = {'Leak': TRANSFER_LINE_LEAK_AREA,
+                      'Rupture': Pipe.area}
         for mode in TABLE_1['Fluid line']:
             name = f'Fluid line {mode.lower()}: {Pipe}'
-            failure_rate = N_lines * TABLE_1['Fluid line'][mode]
+            failure_rate = N * TABLE_1['Fluid line'][mode]
             area = area_cases[mode]
-            Fluid = Fluid or self.Fluid  # If Fluid not defined use Fluid of the Source
+            # If Fluid not defined use Fluid of the Source
+            Fluid = Fluid or self.Fluid
             q_std = self._leak_flow(Pipe, area, Fluid)
             tau = self.volume/q_std
-            self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std, tau.to(ureg.min))
+            self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
+                                tau.to(ureg.min))
 
     def dewar_insulation_failure(self, flow_rate, Fluid=None):
         """Calculate failure rate, flow rate and expected time duration of the
@@ -101,18 +103,20 @@ class Source:
 
         Based on FESHM4240."""
         failure_rate = PFD_DEWAR_INSULATION
-        if Fluid is None:
-            Fluid = self.Fluid
-        tau = self.volume/flow_rate
+        # If Fluid not defined use Fluid of the Source
+        Fluid = Fluid or self.Fluid
+        q_std = ht.piping.to_standard_flow(flow_rate, Fluid)
+        tau = self.volume/q_std
         self.leaks['Dewar insulation failure'] = (failure_rate.to(1/ureg.hr),
-                                                  flow_rate, tau.to(ureg.min))
+                                                  q_std, tau.to(ureg.min))
 
-    def failure_mode(self, name, failure_rate, flow_rate, Fluid=None):
+    def failure_mode(self, name, failure_rate, flow_rate, Fluid=None, N=1):
         """General failure mode."""
-        Fluid = Fluid or self.Fluid  # If Fluid not defined use Fluid of the Source
-        flow_rate = ht.piping.to_standard_flow(flow_rate, Fluid)
-        tau = self.volume/flow_rate
-        self.leaks[name] = (failure_rate.to(1/ureg.hr), flow_rate,
+        # If Fluid not defined use Fluid of the Source
+        Fluid = Fluid or self.Fluid
+        q_std = ht.piping.to_standard_flow(flow_rate, Fluid)
+        tau = self.volume/q_std
+        self.leaks[name] = (N*failure_rate.to(1/ureg.hr), q_std,
                             tau.to(ureg.min))
 
     def constant_leak(self, name, flow_rate):
@@ -126,7 +130,8 @@ class Source:
         TempPiping = ht.piping.Piping(Fluid)
         TempPiping.add(Entrance,
                        Pipe,
-                       Exit,)
+                       Exit,
+        )
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, Fluid)
 
