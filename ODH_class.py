@@ -151,24 +151,10 @@ class Source:
             print('\nBoth volumes should contain the same fluid')
             return None
 
-#    def __mul__(self, num):
-#        Copy = copy(self)
-#        Copy.N *= num
-#        return Copy
-#
-#    def __rmul__(self, num):
-#        Copy = copy(self)
-#        Copy.N *= num
-#        return Copy
-
     def __str__(self):
         return f'{self.name}, ODH source with ' + \
             f'{self.volume.to(ureg.ft**3):.3g~} ' + \
             f'of {self.Fluid.name} gas.'
-
-    def print(self):
-        print('{} is an ODH source of {} with volume of {:.3~}'.format(
-            self.name, self.Fluid.name, self.volume))
 
     def print_leaks(self):
         for key in sorted(self.leaks.keys()):
