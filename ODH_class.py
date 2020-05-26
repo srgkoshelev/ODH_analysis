@@ -86,9 +86,9 @@ class Source:
         """
         area_cases = {'Leak': TRANSFER_LINE_LEAK_AREA,
                       'Rupture': Pipe.area}
-        for mode in TABLE_1['fluid line']:
-            name = f'fluid line {mode.lower()}: {Pipe}'
-            failure_rate = N * TABLE_1['fluid line'][mode]
+        for mode in TABLE_1['Fluid line']:
+            name = f'Fluid line {mode.lower()}: {Pipe}'
+            failure_rate = N * TABLE_1['Fluid line'][mode]
             area = area_cases[mode]
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
