@@ -143,12 +143,14 @@ class Source:
         """
         return (not self.isol_valve) or PFD_SOLENOID
 
-    def __add__(self, other):
-        if self.Fluid.name == other.Fluid.name:
-            total_volume = self.volume + other.volume
-            return Source(f'self.name+other.name', self.Fluid, total_volume)
+    @staticmethod
+    def combine(name, sources):
+        fluid = ht.ThermState(sources[0].Fluid.name, T=ht.T_NTP, P=ht.P_NTP)
+        if all([source.Fluid.name == fluid.name for source in sources]):
+            total_volume = sum([source.volume for source in sources])
+            return Source(name, fluid, total_volume)
         else:
-            print('\nBoth volumes should contain the same fluid')
+            print('\nAll volumes should contain the same fluid')
             return None
 
     def __str__(self):
