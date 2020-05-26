@@ -18,34 +18,34 @@ PFD_POWER = TABLE_1['Electrical Power Failure']['Demand rate']
 PFD_DEWAR_INSULATION = TABLE_1['Dewar']['Loss of vacuum']
 LAMBDA_FAN = TABLE_2['Fan']['Failure to run']
 TRANSFER_LINE_LEAK_AREA = Q_('10 mm^2')
-SHOW_SENS = 1e-7/ureg.hr
+SHOW_SENS = 5e-8/ureg.hr
 
 
 class Source:
     """Define the possible source of inert gas"""
-    def __init__(self, name, Fluid, volume, N=1):
+    def __init__(self, name, fluid, volume, N=1):
         self.name = name
-        self.Fluid = Fluid
+        self.fluid = fluid
         self.leaks = {}
         # Number of sources if multiple exist, e.g. gas cylinders
         # Increases probability of failure by N.
         self.N = N
         # Calculating volume at standard conditions
-        TempState = ht.ThermState(Fluid.name, backend=Fluid.backend)
-        TempState.update('T', ht.T_NTP, 'P', ht.P_NTP)
-        self.volume = volume*Fluid.Dmass/TempState.Dmass
+        temp_state = fluid.copy()
+        temp_state.update('T', ht.T_NTP, 'P', ht.P_NTP)
+        self.volume = volume*fluid.Dmass/temp_state.Dmass
         self.volume.ito(ureg.feet**3)
         # By default assume there is no isolation valve
         # that is used by ODH system
         self.isol_valve = False
 
-    def gas_pipe_failure(self, Pipe, Fluid=None, N_welds=1, max_flow=None):
+    def gas_pipe_failure(self, Pipe, fluid=None, N_welds=1, max_flow=None):
         """
         Calculate failure rate, flow rate and expected time duration of the
         event for gas pipe failure. Based on FESHM 4240.
         """
-        # If Fluid not defined use Fluid of the Source
-        Fluid = Fluid or self.Fluid
+        # If fluid not defined use fluid of the Source
+        fluid = fluid or self.fluid
         # Failure rate coefficients; Piping failure rate is per unit of length,
         # weld is dependent on number of welds, pipe OD and wall thickness
         failure_rate_coeff = {'Piping': Pipe.L, 'Pipe weld': N_welds *
@@ -70,51 +70,51 @@ class Source:
                             TABLE_2[cause][mode]['Failure rate']
                         area = TABLE_2[cause][mode]['Area']
                     if max_flow is not None:
-                        q_std_max = ht.piping.to_standard_flow(max_flow, Fluid)
-                        q_std = min(self._leak_flow(TempPipe, area, Fluid),
+                        q_std_max = ht.piping.to_standard_flow(max_flow, fluid)
+                        q_std = min(self._leak_flow(TempPipe, area, fluid),
                                     q_std_max)
                     else:
-                        q_std = self._leak_flow(TempPipe, area, Fluid)
+                        q_std = self._leak_flow(TempPipe, area, fluid)
                     tau = self.volume/q_std
                     self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
                                         tau.to(ureg.min))
 
-    def transfer_line_failure(self, Pipe, Fluid=None, N=1):
+    def transfer_line_failure(self, Pipe, fluid=None, N=1):
         """
         Calculate failure rate, flow rate and expected time duration of
         the event for transfer line failure. Based on FESHM 4240.
         """
         area_cases = {'Leak': TRANSFER_LINE_LEAK_AREA,
                       'Rupture': Pipe.area}
-        for mode in TABLE_1['Fluid line']:
-            name = f'Fluid line {mode.lower()}: {Pipe}'
-            failure_rate = N * TABLE_1['Fluid line'][mode]
+        for mode in TABLE_1['fluid line']:
+            name = f'fluid line {mode.lower()}: {Pipe}'
+            failure_rate = N * TABLE_1['fluid line'][mode]
             area = area_cases[mode]
-            # If Fluid not defined use Fluid of the Source
-            Fluid = Fluid or self.Fluid
-            q_std = self._leak_flow(Pipe, area, Fluid)
+            # If fluid not defined use fluid of the Source
+            fluid = fluid or self.fluid
+            q_std = self._leak_flow(Pipe, area, fluid)
             tau = self.volume/q_std
             self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
                                 tau.to(ureg.min))
 
-    def dewar_insulation_failure(self, flow_rate, Fluid=None):
+    def dewar_insulation_failure(self, flow_rate, fluid=None):
         """Calculate failure rate, flow rate and expected time duration of the
         failure event for the dewar insulation failure.
 
         Based on FESHM4240."""
         failure_rate = PFD_DEWAR_INSULATION
-        # If Fluid not defined use Fluid of the Source
-        Fluid = Fluid or self.Fluid
-        q_std = ht.piping.to_standard_flow(flow_rate, Fluid)
+        # If fluid not defined use fluid of the Source
+        fluid = fluid or self.fluid
+        q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         tau = self.volume/q_std
         self.leaks['Dewar insulation failure'] = (failure_rate.to(1/ureg.hr),
                                                   q_std, tau.to(ureg.min))
 
-    def failure_mode(self, name, failure_rate, flow_rate, Fluid=None, N=1):
+    def failure_mode(self, name, failure_rate, flow_rate, fluid=None, N=1):
         """General failure mode."""
-        # If Fluid not defined use Fluid of the Source
-        Fluid = Fluid or self.Fluid
-        q_std = ht.piping.to_standard_flow(flow_rate, Fluid)
+        # If fluid not defined use fluid of the Source
+        fluid = fluid or self.fluid
+        q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         tau = self.volume/q_std
         self.leaks[name] = (N*failure_rate.to(1/ureg.hr), q_std,
                             tau.to(ureg.min))
@@ -123,17 +123,17 @@ class Source:
         tau = self.volume/flow_rate
         self.leaks[name] = (None, flow_rate, tau.to(ureg.min))
 
-    def _leak_flow(self, Pipe, Area, Fluid):
+    def _leak_flow(self, Pipe, Area, fluid):
         d = (4*Area/math.pi)**0.5  # diameter for the leak opening
         Entrance = ht.piping.Entrance(d)
         Exit = ht.piping.Exit(d)
-        TempPiping = ht.piping.Piping(Fluid)
+        TempPiping = ht.piping.Piping(fluid)
         TempPiping.add(Entrance,
                        Pipe,
                        Exit,
         )
         m_dot = TempPiping.m_dot(ht.P_NTP)
-        return ht.piping.to_standard_flow(m_dot, Fluid)
+        return ht.piping.to_standard_flow(m_dot, fluid)
 
     @property
     def sol_PFD(self):
@@ -145,8 +145,8 @@ class Source:
 
     @staticmethod
     def combine(name, sources):
-        fluid = ht.ThermState(sources[0].Fluid.name, T=ht.T_NTP, P=ht.P_NTP)
-        if all([source.Fluid.name == fluid.name for source in sources]):
+        fluid = ht.ThermState(sources[0].fluid.name, T=ht.T_NTP, P=ht.P_NTP)
+        if all([source.fluid.name == fluid.name for source in sources]):
             total_volume = sum([source.volume for source in sources])
             return Source(name, fluid, total_volume)
         else:
@@ -156,7 +156,7 @@ class Source:
     def __str__(self):
         return f'{self.name}, ODH source with ' + \
             f'{self.volume.to(ureg.ft**3):.3g~} ' + \
-            f'of {self.Fluid.name} gas.'
+            f'of {self.fluid.name} gas.'
 
     def print_leaks(self):
         for key in sorted(self.leaks.keys()):
