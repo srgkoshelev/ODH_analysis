@@ -54,8 +54,16 @@ SHOW_SENS = 5e-8/ureg.hr
 
 
 class Source:
-    &#34;&#34;&#34;Source of inert gas&#34;&#34;&#34;
-    def __init__(self, name, fluid, volume, N=1):
+    &#34;&#34;&#34;Source of inert gas
+
+    Attributes
+    ----------
+    sol_PFD : float
+        Probability of failure on demand (PFD) for solenoid valve.
+        If the source doesn&#39;t have isolating solenoid valve
+        the probability is 1.
+    &#34;&#34;&#34;
+    def __init__(self, name, fluid, volume, N=1, isol_valve=False):
         &#34;&#34;&#34;Define the possible source of inert gas.
 
         Parameters
@@ -69,6 +77,9 @@ class Source:
         N : int
             Quantity of the sources if several similar sources exist,
             e.g. gas bottles.
+        isol_valve : bool
+            Denotes whether the source is protected using a normally closed
+            solenoid valve.
         &#34;&#34;&#34;
         self.name = name
         self.fluid = fluid
@@ -83,14 +94,15 @@ class Source:
         self.volume.ito(ureg.feet**3)
         # By default assume there is no isolation valve
         # that is used by ODH system
-        self.isol_valve = False
+        self.sol_PFD = ((not isol_valve) or
+                        TABLE_2[&#39;Valve, solenoid&#39;][&#39;Failure to operate&#39;])
 
     def gas_pipe_failure(self, Pipe, fluid=None, N_welds=1, max_flow=None):
         &#34;&#34;&#34;Add gas pipe failure to the leaks dict.
 
         Store failure rate, flow rate and expected time duration of the
         event for gas pipe failure. Based on FESHM 4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -143,7 +155,7 @@ class Source:
 
         Store failure rate, flow rate and expected time duration of
         the event for transfer line failure. Based on FESHM 4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -172,7 +184,7 @@ class Source:
 
         Store failure rate, flow rate and expected time duration of the
         failure event for the dewar insulation failure. Based on FESHM4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -194,7 +206,7 @@ class Source:
 
         Store failure rate, flow rate and expected time duration of the
         failure event for general failure mode.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -235,7 +247,7 @@ class Source:
         -------
         ureg.Quantity {length: 3, time: -1}
             Standard volumetric flow. Conditions are defined in
-            heat_transfer package (generally NTP).
+            `heat_transfer` package (generally NTP).
         &#34;&#34;&#34;
         d = (4*Area/math.pi)**0.5  # diameter for the leak opening
         Entrance = ht.piping.Entrance(d)
@@ -247,21 +259,6 @@ class Source:
         )
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, fluid)
-
-    @property
-    def sol_PFD(self):
-        &#34;&#34;&#34;Calculate probability of failure on demand (PFD) for solenoid valve.
-
-
-        Returns
-        -------
-        float
-            Probability of failure of a solenoid device
-            If the source doesn&#39;t have isolating solenoid valve
-            the probability is 1.
-        &#34;&#34;&#34;
-        return ((not self.isol_valve) or
-                TABLE_2[&#39;Valve, solenoid&#39;][&#39;Failure to operate&#39;])
 
     @staticmethod
     def combine(name, sources):
@@ -308,7 +305,7 @@ class Source:
 class Volume:
     &#34;&#34;&#34;Volume/building affected by inert gases.&#34;&#34;&#34;
     def __init__(self, name, volume, Q_fan, N_fans, Test_period):
-        &#34;&#34;&#34;Define a volume affected by inert gas release from Source.
+        &#34;&#34;&#34;Define a volume affected by inert gas release from  a `Source`.
 
         Parameters
         ----------
@@ -587,9 +584,9 @@ def prob_m_of_n(m, n, T, l):
     Parameters
     ----------
     m : int
-    Number of units working.
+        Number of units working.
     n : int
-    Total number of units.
+        Total number of units.
     T : ureg.Quantity {time: 1}
         Test period
     l : ureg.Quantity {time: -1}
@@ -625,7 +622,7 @@ def conc_vent(V, R, Q, t):
         to blowing air into the confined space, negative - drawing contaminated
         air outside.
     t : ureg.Quantity {time: 1}
-        time, beginning of release is at t=0.
+        time, beginning of release is at `t`=0.
 
     Returns
     -------
@@ -688,7 +685,7 @@ def conc_after(V, C_e, Q, t, t_e):
         to blowing air into the confined space, negative - drawing contaminated
         air outside.
     t : ureg.Quantity {time: 1}
-        time, beginning of release is at t=0.
+        time, beginning of release is at `t`=0.
     t_e : ureg.Quantity {time: 1}
         time when release ended.
 
@@ -745,7 +742,7 @@ the release has ended.</p>
 to blowing air into the confined space, negative - drawing contaminated
 air outside.</dd>
 <dt><strong><code>t</code></strong> :&ensp;<code>ureg.Quantity {time: 1}</code></dt>
-<dd>time, beginning of release is at t=0.</dd>
+<dd>time, beginning of release is at <code>t</code>=0.</dd>
 <dt><strong><code>t_e</code></strong> :&ensp;<code>ureg.Quantity {time: 1}</code></dt>
 <dd>time when release ended.</dd>
 </dl>
@@ -775,7 +772,7 @@ air outside.</dd>
         to blowing air into the confined space, negative - drawing contaminated
         air outside.
     t : ureg.Quantity {time: 1}
-        time, beginning of release is at t=0.
+        time, beginning of release is at `t`=0.
     t_e : ureg.Quantity {time: 1}
         time when release ended.
 
@@ -861,7 +858,7 @@ air outside.</dd>
 to blowing air into the confined space, negative - drawing contaminated
 air outside.</dd>
 <dt><strong><code>t</code></strong> :&ensp;<code>ureg.Quantity {time: 1}</code></dt>
-<dd>time, beginning of release is at t=0.</dd>
+<dd>time, beginning of release is at <code>t</code>=0.</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
@@ -888,7 +885,7 @@ air outside.</dd>
         to blowing air into the confined space, negative - drawing contaminated
         air outside.
     t : ureg.Quantity {time: 1}
-        time, beginning of release is at t=0.
+        time, beginning of release is at `t`=0.
 
     Returns
     -------
@@ -943,11 +940,9 @@ will be printed.</p></div>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>m</code></strong> :&ensp;<code>int</code></dt>
-<dd>&nbsp;</dd>
-<dt>Number of units working.</dt>
+<dd>Number of units working.</dd>
 <dt><strong><code>n</code></strong> :&ensp;<code>int</code></dt>
-<dd>&nbsp;</dd>
-<dt>Total number of units.</dt>
+<dd>Total number of units.</dd>
 <dt><strong><code>T</code></strong> :&ensp;<code>ureg.Quantity {time: 1}</code></dt>
 <dd>Test period</dd>
 <dt><strong><code>l</code></strong> :&ensp;<code>ureg.Quantity {time: -1}</code></dt>
@@ -970,9 +965,9 @@ will be printed.</p></div>
     Parameters
     ----------
     m : int
-    Number of units working.
+        Number of units working.
     n : int
-    Total number of units.
+        Total number of units.
     T : ureg.Quantity {time: 1}
         Test period
     l : ureg.Quantity {time: -1}
@@ -999,10 +994,17 @@ will be printed.</p></div>
 <dl>
 <dt id="ODH_analysis.ODH_class.Source"><code class="flex name class">
 <span>class <span class="ident">Source</span></span>
-<span>(</span><span>name, fluid, volume, N=1)</span>
+<span>(</span><span>name, fluid, volume, N=1, isol_valve=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Source of inert gas</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>sol_PFD</code></strong> :&ensp;<code>float</code></dt>
+<dd>Probability of failure on demand (PFD) for solenoid valve.
+If the source doesn't have isolating solenoid valve
+the probability is 1.</dd>
+</dl>
 <p>Define the possible source of inert gas.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
@@ -1015,14 +1017,25 @@ will be printed.</p></div>
 <dt><strong><code>N</code></strong> :&ensp;<code>int</code></dt>
 <dd>Quantity of the sources if several similar sources exist,
 e.g. gas bottles.</dd>
+<dt><strong><code>isol_valve</code></strong> :&ensp;<code>bool</code></dt>
+<dd>Denotes whether the source is protected using a normally closed
+solenoid valve.</dd>
 </dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Source:
-    &#34;&#34;&#34;Source of inert gas&#34;&#34;&#34;
-    def __init__(self, name, fluid, volume, N=1):
+    &#34;&#34;&#34;Source of inert gas
+
+    Attributes
+    ----------
+    sol_PFD : float
+        Probability of failure on demand (PFD) for solenoid valve.
+        If the source doesn&#39;t have isolating solenoid valve
+        the probability is 1.
+    &#34;&#34;&#34;
+    def __init__(self, name, fluid, volume, N=1, isol_valve=False):
         &#34;&#34;&#34;Define the possible source of inert gas.
 
         Parameters
@@ -1036,6 +1049,9 @@ e.g. gas bottles.</dd>
         N : int
             Quantity of the sources if several similar sources exist,
             e.g. gas bottles.
+        isol_valve : bool
+            Denotes whether the source is protected using a normally closed
+            solenoid valve.
         &#34;&#34;&#34;
         self.name = name
         self.fluid = fluid
@@ -1050,14 +1066,15 @@ e.g. gas bottles.</dd>
         self.volume.ito(ureg.feet**3)
         # By default assume there is no isolation valve
         # that is used by ODH system
-        self.isol_valve = False
+        self.sol_PFD = ((not isol_valve) or
+                        TABLE_2[&#39;Valve, solenoid&#39;][&#39;Failure to operate&#39;])
 
     def gas_pipe_failure(self, Pipe, fluid=None, N_welds=1, max_flow=None):
         &#34;&#34;&#34;Add gas pipe failure to the leaks dict.
 
         Store failure rate, flow rate and expected time duration of the
         event for gas pipe failure. Based on FESHM 4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -1110,7 +1127,7 @@ e.g. gas bottles.</dd>
 
         Store failure rate, flow rate and expected time duration of
         the event for transfer line failure. Based on FESHM 4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -1139,7 +1156,7 @@ e.g. gas bottles.</dd>
 
         Store failure rate, flow rate and expected time duration of the
         failure event for the dewar insulation failure. Based on FESHM4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -1161,7 +1178,7 @@ e.g. gas bottles.</dd>
 
         Store failure rate, flow rate and expected time duration of the
         failure event for general failure mode.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -1202,7 +1219,7 @@ e.g. gas bottles.</dd>
         -------
         ureg.Quantity {length: 3, time: -1}
             Standard volumetric flow. Conditions are defined in
-            heat_transfer package (generally NTP).
+            `heat_transfer` package (generally NTP).
         &#34;&#34;&#34;
         d = (4*Area/math.pi)**0.5  # diameter for the leak opening
         Entrance = ht.piping.Entrance(d)
@@ -1214,21 +1231,6 @@ e.g. gas bottles.</dd>
         )
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, fluid)
-
-    @property
-    def sol_PFD(self):
-        &#34;&#34;&#34;Calculate probability of failure on demand (PFD) for solenoid valve.
-
-
-        Returns
-        -------
-        float
-            Probability of failure of a solenoid device
-            If the source doesn&#39;t have isolating solenoid valve
-            the probability is 1.
-        &#34;&#34;&#34;
-        return ((not self.isol_valve) or
-                TABLE_2[&#39;Valve, solenoid&#39;][&#39;Failure to operate&#39;])
 
     @staticmethod
     def combine(name, sources):
@@ -1323,39 +1325,6 @@ def combine(name, sources):
 </details>
 </dd>
 </dl>
-<h3>Instance variables</h3>
-<dl>
-<dt id="ODH_analysis.ODH_class.Source.sol_PFD"><code class="name">var <span class="ident">sol_PFD</span></code></dt>
-<dd>
-<div class="desc"><p>Calculate probability of failure on demand (PFD) for solenoid valve.</p>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>float</code></dt>
-<dd>Probability of failure of a solenoid device
-If the source doesn't have isolating solenoid valve
-the probability is 1.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@property
-def sol_PFD(self):
-    &#34;&#34;&#34;Calculate probability of failure on demand (PFD) for solenoid valve.
-
-
-    Returns
-    -------
-    float
-        Probability of failure of a solenoid device
-        If the source doesn&#39;t have isolating solenoid valve
-        the probability is 1.
-    &#34;&#34;&#34;
-    return ((not self.isol_valve) or
-            TABLE_2[&#39;Valve, solenoid&#39;][&#39;Failure to operate&#39;])</code></pre>
-</details>
-</dd>
-</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="ODH_analysis.ODH_class.Source.dewar_insulation_failure"><code class="name flex">
@@ -1365,7 +1334,7 @@ def sol_PFD(self):
 <div class="desc"><p>Add dewar insulation failure to leaks dict.</p>
 <p>Store failure rate, flow rate and expected time duration of the
 failure event for the dewar insulation failure. Based on FESHM4240.
-Failure modes are analyzed by Volume.odh method.</p>
+Failure modes are analyzed by <code><a title="ODH_analysis.ODH_class.Volume.odh" href="#ODH_analysis.ODH_class.Volume.odh">Volume.odh()</a></code> method.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>flow_rate</code></strong> :&ensp;<code>ureg.Quantity {mass: 1, time: -1}</code> or <code>{length: 3, time: -1}</code></dt>
@@ -1382,7 +1351,7 @@ Failure modes are analyzed by Volume.odh method.</p>
 
     Store failure rate, flow rate and expected time duration of the
     failure event for the dewar insulation failure. Based on FESHM4240.
-    Failure modes are analyzed by Volume.odh method.
+    Failure modes are analyzed by `Volume.odh` method.
 
     Parameters
     ----------
@@ -1407,7 +1376,7 @@ Failure modes are analyzed by Volume.odh method.</p>
 <div class="desc"><p>Add general failure mode to leaks dict.</p>
 <p>Store failure rate, flow rate and expected time duration of the
 failure event for general failure mode.
-Failure modes are analyzed by Volume.odh method.</p>
+Failure modes are analyzed by <code><a title="ODH_analysis.ODH_class.Volume.odh" href="#ODH_analysis.ODH_class.Volume.odh">Volume.odh()</a></code> method.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>name</code></strong> :&ensp;<code>str</code></dt>
@@ -1431,7 +1400,7 @@ Failure modes are analyzed by Volume.odh method.</p>
 
     Store failure rate, flow rate and expected time duration of the
     failure event for general failure mode.
-    Failure modes are analyzed by Volume.odh method.
+    Failure modes are analyzed by `Volume.odh` method.
 
     Parameters
     ----------
@@ -1461,7 +1430,7 @@ Failure modes are analyzed by Volume.odh method.</p>
 <div class="desc"><p>Add gas pipe failure to the leaks dict.</p>
 <p>Store failure rate, flow rate and expected time duration of the
 event for gas pipe failure. Based on FESHM 4240.
-Failure modes are analyzed by Volume.odh method.</p>
+Failure modes are analyzed by <code><a title="ODH_analysis.ODH_class.Volume.odh" href="#ODH_analysis.ODH_class.Volume.odh">Volume.odh()</a></code> method.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>Pipe</code></strong> :&ensp;<code>heat_transfer.piping.Pipe</code></dt>
@@ -1483,7 +1452,7 @@ e.g. by compressor output.</dd>
 
     Store failure rate, flow rate and expected time duration of the
     event for gas pipe failure. Based on FESHM 4240.
-    Failure modes are analyzed by Volume.odh method.
+    Failure modes are analyzed by `Volume.odh` method.
 
     Parameters
     ----------
@@ -1559,7 +1528,7 @@ e.g. by compressor output.</dd>
 <div class="desc"><p>Add transfer line failure to leaks dict.</p>
 <p>Store failure rate, flow rate and expected time duration of
 the event for transfer line failure. Based on FESHM 4240.
-Failure modes are analyzed by Volume.odh method.</p>
+Failure modes are analyzed by <code><a title="ODH_analysis.ODH_class.Volume.odh" href="#ODH_analysis.ODH_class.Volume.odh">Volume.odh()</a></code> method.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>Pipe</code></strong> :&ensp;<code>heat_transfer.Pipe</code></dt>
@@ -1578,7 +1547,7 @@ Failure modes are analyzed by Volume.odh method.</p>
 
     Store failure rate, flow rate and expected time duration of
     the event for transfer line failure. Based on FESHM 4240.
-    Failure modes are analyzed by Volume.odh method.
+    Failure modes are analyzed by `Volume.odh` method.
 
     Parameters
     ----------
@@ -1611,7 +1580,8 @@ Failure modes are analyzed by Volume.odh method.</p>
 </code></dt>
 <dd>
 <div class="desc"><p>Volume/building affected by inert gases.</p>
-<p>Define a volume affected by inert gas release from Source.</p>
+<p>Define a volume affected by inert gas release from
+a <code><a title="ODH_analysis.ODH_class.Source" href="#ODH_analysis.ODH_class.Source">Source</a></code>.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>name</code></strong> :&ensp;<code>str</code></dt>
@@ -1632,7 +1602,7 @@ Failure modes are analyzed by Volume.odh method.</p>
 <pre><code class="python">class Volume:
     &#34;&#34;&#34;Volume/building affected by inert gases.&#34;&#34;&#34;
     def __init__(self, name, volume, Q_fan, N_fans, Test_period):
-        &#34;&#34;&#34;Define a volume affected by inert gas release from Source.
+        &#34;&#34;&#34;Define a volume affected by inert gas release from  a `Source`.
 
         Parameters
         ----------
@@ -2086,7 +2056,6 @@ Default is no outage.</dd>
 <li><code><a title="ODH_analysis.ODH_class.Source.failure_mode" href="#ODH_analysis.ODH_class.Source.failure_mode">failure_mode</a></code></li>
 <li><code><a title="ODH_analysis.ODH_class.Source.gas_pipe_failure" href="#ODH_analysis.ODH_class.Source.gas_pipe_failure">gas_pipe_failure</a></code></li>
 <li><code><a title="ODH_analysis.ODH_class.Source.print_leaks" href="#ODH_analysis.ODH_class.Source.print_leaks">print_leaks</a></code></li>
-<li><code><a title="ODH_analysis.ODH_class.Source.sol_PFD" href="#ODH_analysis.ODH_class.Source.sol_PFD">sol_PFD</a></code></li>
 <li><code><a title="ODH_analysis.ODH_class.Source.transfer_line_failure" href="#ODH_analysis.ODH_class.Source.transfer_line_failure">transfer_line_failure</a></code></li>
 </ul>
 </li>
