@@ -1,3 +1,10 @@
+"""odh - Oxygen Deficiency Hazard analysis tool.
+
+Based on Fermilab ES&H Manual chapter 4240 (see
+https://eshq.fnal.gov/manuals/feshm/)
+
+This package is maintained at https://github.com/srgkoshelev/ODH_analysis"""
+
 import math
 import heat_transfer as ht
 from copy import copy
