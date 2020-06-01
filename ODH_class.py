@@ -30,8 +30,10 @@ class Source:
     ----------
     sol_PFD : float
         Probability of failure on demand (PFD) for solenoid valve.
+        If the source doesn't have isolating solenoid valve
+        the probability is 1.
     """
-    def __init__(self, name, fluid, volume, N=1):
+    def __init__(self, name, fluid, volume, N=1, isol_valve=False):
         """Define the possible source of inert gas.
 
         Parameters
@@ -45,6 +47,9 @@ class Source:
         N : int
             Quantity of the sources if several similar sources exist,
             e.g. gas bottles.
+        isol_valve : bool
+            Denotes whether the source is protected using a normally closed
+            solenoid valve.
         """
         self.name = name
         self.fluid = fluid
@@ -59,7 +64,11 @@ class Source:
         self.volume.ito(ureg.feet**3)
         # By default assume there is no isolation valve
         # that is used by ODH system
-        self.isol_valve = False
+        sol_PFD = ((not isol_valve) or
+                   TABLE_2['Valve, solenoid']['Failure to operate'])
+
+    @property
+    def sol_PFD(self):
 
     def gas_pipe_failure(self, Pipe, fluid=None, N_welds=1, max_flow=None):
         """Add gas pipe failure to the leaks dict.
@@ -223,15 +232,6 @@ class Source:
         )
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, fluid)
-
-    @property
-    def sol_PFD(self):
-        """Probability of failure of a solenoid device
-            If the source doesn't have isolating solenoid valve
-            the probability is 1.
-        """
-        return ((not self.isol_valve) or
-                TABLE_2['Valve, solenoid']['Failure to operate'])
 
     @staticmethod
     def combine(name, sources):
