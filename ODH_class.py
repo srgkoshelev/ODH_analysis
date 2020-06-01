@@ -220,7 +220,7 @@ class Source:
         -------
         ureg.Quantity {length: 3, time: -1}
             Standard volumetric flow. Conditions are defined in
-            heat_transfer package (generally NTP).
+            `heat_transfer` package (generally NTP).
         """
         d = (4*Area/math.pi)**0.5  # diameter for the leak opening
         Entrance = ht.piping.Entrance(d)
@@ -557,9 +557,9 @@ def prob_m_of_n(m, n, T, l):
     Parameters
     ----------
     m : int
-    Number of units working.
+        Number of units working.
     n : int
-    Total number of units.
+        Total number of units.
     T : ureg.Quantity {time: 1}
         Test period
     l : ureg.Quantity {time: -1}
@@ -595,7 +595,7 @@ def conc_vent(V, R, Q, t):
         to blowing air into the confined space, negative - drawing contaminated
         air outside.
     t : ureg.Quantity {time: 1}
-        time, beginning of release is at t=0.
+        time, beginning of release is at `t`=0.
 
     Returns
     -------
@@ -658,7 +658,7 @@ def conc_after(V, C_e, Q, t, t_e):
         to blowing air into the confined space, negative - drawing contaminated
         air outside.
     t : ureg.Quantity {time: 1}
-        time, beginning of release is at t=0.
+        time, beginning of release is at `t`=0.
     t_e : ureg.Quantity {time: 1}
         time when release ended.
 
