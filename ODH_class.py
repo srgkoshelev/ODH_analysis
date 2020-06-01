@@ -64,11 +64,8 @@ class Source:
         self.volume.ito(ureg.feet**3)
         # By default assume there is no isolation valve
         # that is used by ODH system
-        sol_PFD = ((not isol_valve) or
-                   TABLE_2['Valve, solenoid']['Failure to operate'])
-
-    @property
-    def sol_PFD(self):
+        self.sol_PFD = ((not isol_valve) or
+                        TABLE_2['Valve, solenoid']['Failure to operate'])
 
     def gas_pipe_failure(self, Pipe, fluid=None, N_welds=1, max_flow=None):
         """Add gas pipe failure to the leaks dict.
