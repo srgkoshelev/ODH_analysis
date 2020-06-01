@@ -4,4 +4,4 @@ odh is a tool for performing Oxygen Deficiency Hazard analysis based on [[https:
 Main method of protection against ODH is a complex system involving ODH heads and chassis or PLCs that power louvers and fans (which may fail separately). PFD_ODH describes the probability of failure of this system to register, transmit and respond to the reduction of oxygen concetration of the volume. Default value is based on analysis performed by J. Anderson and presented ... When necessary, the value can be redefined. One must take care calculating PFD_ODH as it may be complicated to properly add probabilities.
 #+end_comment
 * Documentation
-Documentation of the `odh_analysis` can be found [[https://srgkoshelev.github.io/ODH_analysis/][here]].
+Documentation of the ~odh_analysis~ can be found [[https://srgkoshelev.github.io/ODH_analysis/][here]].
