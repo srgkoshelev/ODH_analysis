@@ -24,7 +24,13 @@ SHOW_SENS = 5e-8/ureg.hr
 
 
 class Source:
-    """Source of inert gas"""
+    """Source of inert gas
+
+    Attributes
+    ----------
+    sol_PFD : float
+        Probability of failure on demand (PFD) for solenoid valve.
+    """
     def __init__(self, name, fluid, volume, N=1):
         """Define the possible source of inert gas.
 
@@ -60,7 +66,7 @@ class Source:
 
         Store failure rate, flow rate and expected time duration of the
         event for gas pipe failure. Based on FESHM 4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -113,7 +119,7 @@ class Source:
 
         Store failure rate, flow rate and expected time duration of
         the event for transfer line failure. Based on FESHM 4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -142,7 +148,7 @@ class Source:
 
         Store failure rate, flow rate and expected time duration of the
         failure event for the dewar insulation failure. Based on FESHM4240.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -164,7 +170,7 @@ class Source:
 
         Store failure rate, flow rate and expected time duration of the
         failure event for general failure mode.
-        Failure modes are analyzed by Volume.odh method.
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -220,13 +226,7 @@ class Source:
 
     @property
     def sol_PFD(self):
-        """Calculate probability of failure on demand (PFD) for solenoid valve.
-
-
-        Returns
-        -------
-        float
-            Probability of failure of a solenoid device
+        """Probability of failure of a solenoid device
             If the source doesn't have isolating solenoid valve
             the probability is 1.
         """
@@ -278,7 +278,7 @@ class Source:
 class Volume:
     """Volume/building affected by inert gases."""
     def __init__(self, name, volume, Q_fan, N_fans, Test_period):
-        """Define a volume affected by inert gas release from Source.
+        """Define a volume affected by inert gas release from  a `Source`.
 
         Parameters
         ----------
