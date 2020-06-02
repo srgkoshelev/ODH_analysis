@@ -9,6 +9,7 @@ import math
 import heat_transfer as ht
 from copy import copy
 from collections import namedtuple
+import xlsxwriter
 
 # Setting up the units
 ureg = ht.ureg
@@ -538,32 +539,57 @@ class Volume:
                 print(f' Fan rate:             {f_mode.Q_fan:.2~}')
                 print(f' Fatality prob:        {f_mode.O2_conc:.0%}')
 
-    def report_table(self):
+    def report_table(self, display=False):
         """Make a table with the calculation results."""
         table = []
-        header = ['Source', 'Failure', '# of', 'Leak failure rate',
-                  'Leak rate', 'Fans working', 'Fan rate',
-                  'Event duration', ' Oxygen concentration',
-                  'Fatality prob', 'Fatality rate']
+        header = ['Source', 'Failure', '# of', 'Leak failure rate, 1/hr',
+                  'Leak rate, SCFM', '# fans working', 'Fan rate, SCFM',
+                  'Event duration, min', ' Oxygen concentration',
+                  'Fatality prob', 'Fatality rate, 1/hr']
         # 'Total failure rate', 'ODH protection PFD', 'Building is powered'
         table.append(header)
         self.fail_modes.sort(key=lambda x: x.source.name)
         for f_mode in self.fail_modes:
             table.append([
-                f'{f_mode.source.name}',
-                f'{f_mode.name}',
-                f'{f_mode.N}',
-                f'{f_mode.leak_fr:.3g~}',
-                f'{f_mode.q_leak:.2~}',
-                f'{f_mode.N_fan}',
-                f'{f_mode.Q_fan:.2~}',
-                f'{f_mode.tau:.2~}',
-                f'{f_mode.O2_conc:.0%}',
-                f'{f_mode.F_i:.2g}',
-                f'{f_mode.phi.to(1/ureg.hr):.2~}'])
-        print(table)
-
-
+                f_mode.source.name,
+                f_mode.name,
+                f_mode.N,
+                f_mode.leak_fr.to(1/ureg.hr).magnitude,
+                f_mode.q_leak.to(ureg.ft**3/ureg.min).magnitude,
+                f_mode.N_fan,
+                f_mode.Q_fan.to(ureg.ft**3/ureg.min).magnitude,
+                f_mode.tau.to(ureg.min).magnitude,
+                f_mode.O2_conc,
+                f_mode.F_i,
+                f_mode.phi.to(1/ureg.hr).magnitude])
+        if display:
+            print(table)
+        with xlsxwriter.Workbook('ODH_report.xlsx') as workbook:
+            N_cols = len(table[0])
+            header_format = workbook.add_format({'bold': True,
+                                                 'font_size': 12,
+                                                 'bottom': 3})
+            worksheet = workbook.add_worksheet()
+            col_width = [0] * N_cols
+            for row_n, row in enumerate(table):
+                for col_n, data in enumerate(row):
+                    if row_n == 0:
+                        worksheet.write(row_n, col_n, data, header_format)
+                    else:
+                        worksheet.write(row_n, col_n, data)
+                    col_width[col_n] = max(col_width[col_n], len(str(data)))
+            sci_format = workbook.add_format({'num_format': '0.00E+00'},)
+            flow_format = workbook.add_format({'num_format': '#'},)
+            percent_format = workbook.add_format({'num_format': '0%'},)
+            worksheet.set_column(3, 3, None, sci_format)
+            worksheet.set_column(4, 4, None, flow_format)
+            worksheet.set_column(7, 7, None, sci_format)
+            worksheet.set_column(8, 8, None, percent_format)
+            worksheet.set_column(9, 10, None, sci_format)
+            # Autofit column width
+            for col_n, width in enumerate(col_width):
+                adj_width = width - 0.005 * width**2
+                worksheet.set_column(col_n, col_n, adj_width)
 
     def __str__(self):
         return (f'Volume: {self.name}, {self.volume.to(ureg.ft**3):.2~}')
