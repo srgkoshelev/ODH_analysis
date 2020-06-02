@@ -28,7 +28,7 @@ SHOW_SENS = 5e-8/ureg.hr
 failure_mode = namedtuple('Failure_mode', ['phi', 'source', 'name',
                                            'O2_conc', 'leak_fr', 'P_i',
                                            'F_i', 'outage', 'q_leak', 'tau',
-                                           'Q_fan', 'N_fan'])
+                                           'Q_fan', 'N_fan', 'N'])
 
 
 class Source:
@@ -128,7 +128,7 @@ class Source:
                         q_std = min(q_std, q_std_max)
                     tau = self.volume/q_std
                     self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
-                                        tau.to(ureg.min))
+                                        tau.to(ureg.min), N_welds)
 
     def transfer_line_failure(self, Pipe, fluid=None, N=1):
         """Add transfer line failure to leaks dict.
@@ -162,7 +162,7 @@ class Source:
             q_std = self._leak_flow(Pipe, area, fluid)
             tau = self.volume/q_std
             self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
-                                tau.to(ureg.min))
+                                tau.to(ureg.min), N)
 
     def dewar_insulation_failure(self, flow_rate, fluid=None):
         """Add dewar insulation failure to leaks dict.
@@ -184,7 +184,8 @@ class Source:
         q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         tau = self.volume/q_std
         self.leaks['Dewar insulation failure'] = (failure_rate.to(1/ureg.hr),
-                                                  q_std, tau.to(ureg.min))
+                                                  q_std, tau.to(ureg.min),
+                                                  self.N)
 
     def failure_mode(self, name, failure_rate, flow_rate, fluid=None, N=1):
         """Add general failure mode to leaks dict.
@@ -211,7 +212,7 @@ class Source:
         q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         tau = self.volume/q_std
         self.leaks[name] = (N*failure_rate.to(1/ureg.hr), q_std,
-                            tau.to(ureg.min))
+                            tau.to(ureg.min), N)
 
     # def constant_leak(self, name, flow_rate):
     #     tau = self.volume/flow_rate
@@ -386,7 +387,7 @@ class Volume:
         PFD_power_building : float
             Probability of power failure.
         """
-        (leak_failure_rate, q_leak, tau) = leak
+        (leak_failure_rate, q_leak, tau, N) = leak
         P_no_response = float(PFD_power_build)*float(sol_PFD) +\
             (1-PFD_power_build)*self.PFD_ODH
         P_i = leak_failure_rate * P_no_response
@@ -397,7 +398,7 @@ class Volume:
         self.phi += phi_i
         f_mode = failure_mode(phi_i, source, failure_mode_name, O2_conc,
                               leak_failure_rate, P_i, F_i,
-                              PFD_power_build == 1, q_leak, tau, Q_fan, 0)
+                              PFD_power_build == 1, q_leak, tau, Q_fan, 0, N)
         self.fail_modes.append(f_mode)
 
     def _fatality_fan_powered(self, source, failure_mode_name, leak,
@@ -423,7 +424,7 @@ class Volume:
         PFD_power_building : float
             Probability of power failure.
         """
-        (leak_failure_rate, q_leak, tau) = leak
+        (leak_failure_rate, q_leak, tau, N) = leak
         for (P_fan, Q_fan, N_fan) in self.Fan_flowrates:
             # Probability of power on, ODH system working, and m number of fans
             # with flow rate Q_fan on.
@@ -436,7 +437,7 @@ class Volume:
             f_mode = failure_mode(phi_i, source, failure_mode_name, O2_conc,
                                   leak_failure_rate, P_i, F_i,
                                   PFD_power_build == 1, q_leak, tau, Q_fan,
-                                  N_fan)
+                                  N_fan, N)
             self.fail_modes.append(f_mode)
 
     def _fan_fail(self, Test_period, Q_fan, N_fans):
@@ -535,7 +536,34 @@ class Volume:
                 print(f' Event duration:       {f_mode.tau:.2~}')
                 print(f' Fans working:         {f_mode.N_fan}')
                 print(f' Fan rate:             {f_mode.Q_fan:.2~}')
-                print(f' Fatality prob:        {f_mode.F_i:.2g}')
+                print(f' Fatality prob:        {f_mode.O2_conc:.0%}')
+
+    def report_table(self):
+        """Make a table with the calculation results."""
+        table = []
+        header = ['Source', 'Failure', '# of', 'Leak failure rate',
+                  'Leak rate', 'Fans working', 'Fan rate',
+                  'Event duration', ' Oxygen concentration',
+                  'Fatality prob', 'Fatality rate']
+        # 'Total failure rate', 'ODH protection PFD', 'Building is powered'
+        table.append(header)
+        self.fail_modes.sort(key=lambda x: x.source.name)
+        for f_mode in self.fail_modes:
+            table.append([
+                f'{f_mode.source.name}',
+                f'{f_mode.name}',
+                f'{f_mode.N}',
+                f'{f_mode.leak_fr:.3g~}',
+                f'{f_mode.q_leak:.2~}',
+                f'{f_mode.N_fan}',
+                f'{f_mode.Q_fan:.2~}',
+                f'{f_mode.tau:.2~}',
+                f'{f_mode.O2_conc:.0%}',
+                f'{f_mode.F_i:.2g}',
+                f'{f_mode.phi.to(1/ureg.hr):.2~}'])
+        print(table)
+
+
 
     def __str__(self):
         return (f'Volume: {self.name}, {self.volume.to(ureg.ft**3):.2~}')
