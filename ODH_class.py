@@ -16,6 +16,8 @@ Q_ = ureg.Quantity
 # Loading FESHM 4240 Failure rates
 from .FESHM4240_TABLES import TABLE_1, TABLE_2
 
+
+logger = ht.logger
 # Probability of failure on demand for main cases
 PFD_ODH = Q_('2 * 10^-3')
 # TODO Update to value from J. Anderson's document
@@ -110,12 +112,14 @@ class Source:
                         failure_rate = failure_rate_coeff[cause] * \
                             TABLE_2[cause][mode]['Failure rate']
                         area = TABLE_2[cause][mode]['Area']
+                        if area > Pipe.area:
+                            logger.warning('Leak area cannot be larger'
+                                           ' than pipe area.')
+                            continue
+                    q_std = self._leak_flow(TempPipe, area, fluid)
                     if max_flow is not None:
                         q_std_max = ht.piping.to_standard_flow(max_flow, fluid)
-                        q_std = min(self._leak_flow(TempPipe, area, fluid),
-                                    q_std_max)
-                    else:
-                        q_std = self._leak_flow(TempPipe, area, fluid)
+                        q_std = min(q_std, q_std_max)
                     tau = self.volume/q_std
                     self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
                                         tau.to(ureg.min))
@@ -142,6 +146,11 @@ class Source:
             name = f'Fluid line {mode.lower()}: {Pipe}'
             failure_rate = N * TABLE_1['Fluid line'][mode]
             area = area_cases[mode]
+            # TODO move this and gas leak check to separate method
+            if area > Pipe.area:
+                logger.warning('Leak area cannot be larger'
+                               ' than pipe area.')
+                continue
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
             q_std = self._leak_flow(Pipe, area, fluid)
@@ -264,9 +273,9 @@ class Source:
     def print_leaks(self):
         """Print information on the leaks defined for the source."""
         for key in sorted(self.leaks.keys()):
-            print('Failure mode: '+key)
-            print('Failure rate: {:.2~}'.format(self.leaks[key][0]))
-            print('Flow rate: {:.2~}'.format(
+            print('Failure mode:   '+key)
+            print('Failure rate:   {:.2~}'.format(self.leaks[key][0]))
+            print('Flow rate:      {:.2~}'.format(
                 self.leaks[key][1].to(ureg.ft**3/ureg.min)))
             print('Event duration: {:.2~}'.format(self.leaks[key][2]))
             print()
