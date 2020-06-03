@@ -539,7 +539,7 @@ class Volume:
                 print(f' Fan rate:             {f_mode.Q_fan:.2~}')
                 print(f' Fatality prob:        {f_mode.O2_conc:.0%}')
 
-    def report_table(self, display=False):
+    def report_table(self, filename=None):
         """Make a table with the calculation results."""
         table = []
         header = ['Source', 'Failure', '# of', 'Leak failure rate, 1/hr',
@@ -562,8 +562,8 @@ class Volume:
                 f_mode.O2_conc,
                 f_mode.F_i,
                 f_mode.phi.to(1/ureg.hr).magnitude])
-        if display:
-            print(table)
+        if not filename:
+            return  # This will exit the function
         with xlsxwriter.Workbook('ODH_report.xlsx') as workbook:
             N_cols = len(table[0])
             header_format = workbook.add_format({'bold': True,
