@@ -537,7 +537,7 @@ class Volume:
                 print(f' Event duration:       {f_mode.tau:.2~}')
                 print(f' Fans working:         {f_mode.N_fan}')
                 print(f' Fan rate:             {f_mode.Q_fan:.2~}')
-                print(f' Fatality prob:        {f_mode.O2_conc:.0%}')
+                print(f' Fatality prob:        {f_mode.F_i:.0%}')
 
     def report_table(self, filename=None):
         """Make a table with the calculation results."""
