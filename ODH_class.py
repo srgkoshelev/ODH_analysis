@@ -507,11 +507,12 @@ class Volume:
             print('ODH fatality rate is too high. Please, check calculations')
             return None
 
-    def report(self, brief=True):
+    def report(self, brief=True, sens=None):
         """Print a report for failure modes and effects.
 
         The report is sorted by fatality rate descending."""
         self.fail_modes.sort(key=lambda x: x.phi, reverse=True)
+        sens = sens or SHOW_SENS
         title = f'ODH report for {self}'
         padding = len(title) + 10
         print('#'*padding)
@@ -519,9 +520,9 @@ class Volume:
         print('-'*padding)
         if brief:
             print('Printing brief ODH report')
-            print(f'Only leaks with Fatality rate > {SHOW_SENS} are shown')
+            print(f'Only leaks with Fatality rate > {sens} are shown')
         for f_mode in self.fail_modes:
-            if f_mode.phi >= SHOW_SENS or not brief:
+            if f_mode.phi >= sens or not brief:
                 print()
                 print(f' Source:               {f_mode.source.name}')
                 print(f' Failure:              {f_mode.name}')
