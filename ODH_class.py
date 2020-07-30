@@ -188,6 +188,43 @@ class Source:
                                                   q_std, tau.to(ureg.min),
                                                   self.N)
 
+    def u_tube_failure(self, outer_tube, inner_tube, L, use_rate,
+                       fluid=None, N=1):
+        """Add U-Tube failure to leaks dict.
+
+        Store failure rate, flow rate and expected time duration of the
+        failure event for the dewar insulation failure. Based on FESHM4240.
+        Failure modes are analyzed by `Volume.odh` method.
+
+        Parameters
+        ----------
+        flow_rate : ureg.Quantity {mass: 1, time: -1} or {length: 3, time: -1}
+            Relief flow rate for the case of dewar insulation failure.
+        fluid : heat_transfer.ThermState
+            Thermodynamic state of the fluid stored in the source.
+        """
+        # TODO Make areas adjustable, add info to docstring
+        flow_path_cases = {'Small event': ht.piping.Annulus(outer_tube.ID,
+                                                            inner_tube.OD,
+                                                            L=L),
+                           'Large event': outer_tube}
+        for mode in TABLE_1['U-Tube change']:
+            flow_path = flow_path_cases[mode]
+            name = f'U-Tube {mode.lower()}: {flow_path}'
+            failure_rate = N * TABLE_1['U-Tube change'][mode] * use_rate
+            area = flow_path.area
+            # TODO move this and gas leak check to separate method
+            if area > outer_tube.area:
+                logger.warning('Leak area cannot be larger'
+                               ' than outer tube area.')
+                continue
+            # If fluid not defined use fluid of the Source
+            fluid = fluid or self.fluid
+            q_std = self._leak_flow(flow_path, area, fluid)
+            tau = self.volume/q_std
+            self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
+                                tau.to(ureg.min), N)
+
     def failure_mode(self, name, failure_rate, flow_rate, fluid=None, N=1):
         """Add general failure mode to leaks dict.
 
