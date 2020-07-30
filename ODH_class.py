@@ -219,13 +219,16 @@ class Source:
     #     tau = self.volume/flow_rate
     #     self.leaks[name] = (None, flow_rate, tau.to(ureg.min))
 
-    def _leak_flow(self, Pipe, Area, fluid):
+    def _leak_flow(self, tube, area, fluid):
         """Calculate leak flow through a pipe
+
+        The flow is assumed to go through the pipe and exit with optional
+        orifice imitating a hole in the pipe wall.
 
         Parameters
         ----------
-        Pipe : heat_transfer.Pipe
-        Area : ureg.Quantity {length: 2}
+        tube : heat_transfer.Tube
+        area : ureg.Quantity {length: 2}
             Area of the leak.
         fluid : heat_transfer.ThermState
             Thermodynamic state of the fluid stored in the source.
@@ -236,14 +239,16 @@ class Source:
             Standard volumetric flow. Conditions are defined in
             `heat_transfer` package (generally NTP).
         """
-        d = (4*Area/math.pi)**0.5  # diameter for the leak opening
-        Entrance = ht.piping.Entrance(d)
-        Exit = ht.piping.Exit(d)
+        d = (4*area/math.pi)**0.5  # diameter for the leak opening
+        exit_ = ht.piping.Exit(d)
         TempPiping = ht.piping.Piping(fluid)
-        TempPiping.add(Entrance,
-                       Pipe,
-                       Exit,
+        TempPiping.add(
+                       tube,
+                       exit_,
         )
+        if area != tube.area:
+            Hole = ht.piping.Orifice(d)
+            TempPiping.insert(1, Hole)
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, fluid)
 
