@@ -624,8 +624,6 @@ class Volume:
                 f_mode.O2_conc,
                 f_mode.F_i,
                 f_mode.phi.to(1/ureg.hr).magnitude])
-        if not filename:
-            return  # This will exit the function
         with xlsxwriter.Workbook('ODH_report.xlsx') as workbook:
             N_cols = len(table[0])
             header_format = workbook.add_format({'bold': True,
