@@ -631,7 +631,9 @@ class Volume:
                                                  'bottom': 3})
             worksheet = workbook.add_worksheet()
             col_width = [0] * N_cols
+            N_rows = 0
             for row_n, row in enumerate(table):
+                N_rows += 1
                 for col_n, data in enumerate(row):
                     if row_n == 0:
                         worksheet.write(row_n, col_n, data, header_format)
@@ -650,6 +652,11 @@ class Volume:
             for col_n, width in enumerate(col_width):
                 adj_width = width - 0.005 * width**2
                 worksheet.set_column(col_n, col_n, adj_width)
+            # Adding usability
+            worksheet.conditional_format(1, N_cols-1, N_rows-1, N_cols-1,
+            {'type': '3_color_scale', 'min_color': '#008000',
+             'max_color': '#FF0000'})
+            worksheet.freeze_panes(1, 0)
 
     def __str__(self):
         return (f'Volume: {self.name}, {self.volume.to(ureg.ft**3):.2~}')
