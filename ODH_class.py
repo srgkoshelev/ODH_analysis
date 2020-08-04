@@ -582,6 +582,25 @@ class Volume:
                 print(f' Fan rate:             {f_mode.Q_fan:.2~}')
                 print(f' Fatality prob:        {f_mode.F_i:.0%}')
 
+    def report_short_table(self, sens=None):
+        """Prepare a short table for failure modes and effects.
+
+        The report is sorted by fatality rate descending."""
+        self.fail_modes.sort(key=lambda x: x.phi, reverse=True)
+        sens = sens or SHOW_SENS
+        table = [["Failure mode", "Fans on", "O_2", "Duration, min", "\\phi_i"]]
+        table.append(None)
+        for f_mode in self.fail_modes:
+            if f_mode.phi >= sens:
+                row = []
+                row.append(f'{f_mode.source.name} {f_mode.name}')
+                row.append(f'{f_mode.N_fan}')
+                row.append(f'{f_mode.O2_conc:.0%}')
+                row.append(f'{f_mode.tau.to(ureg.min).magnitude:.2}')
+                row.append(f'{f_mode.phi.to(1/ureg.hr).magnitude:.2}')
+                table.append(row)
+        return table
+
     def report_table(self, filename=None):
         """Make a table with the calculation results."""
         table = []
