@@ -645,16 +645,19 @@ class Volume:
             sci_format = workbook.add_format({'num_format': '0.00E+00'},)
             flow_format = workbook.add_format({'num_format': '#'},)
             percent_format = workbook.add_format({'num_format': '0%'},)
+            number_format = workbook.add_format({'num_format': '0'},)
             worksheet.set_column(3, 3, None, sci_format)
             worksheet.set_column(4, 4, None, flow_format)
             worksheet.set_column(7, 7, None, sci_format)
             worksheet.set_column(8, 8, None, percent_format)
             worksheet.set_column(9, 10, None, sci_format)
             # Writing total/summary
-            worksheet.write(N_rows+1, N_cols-2, 'Total fatality rate')
-            worksheet.write(N_rows+1, N_cols-1, self.phi.to(1/ureg.hr).magnitude)
+            worksheet.write(N_rows+1, N_cols-2, 'Total fatality rate, 1/hr')
+            worksheet.write(N_rows+1, N_cols-1,
+                            self.phi.to(1/ureg.hr).magnitude)
             worksheet.write(N_rows+2, N_cols-2, 'ODH class')
-            worksheet.write(N_rows+2, N_cols-1, f'{self.odh_class():.0f}')
+            worksheet.write(N_rows+2, N_cols-1, self.odh_class(),
+                            number_format)
             # Autofit column width
             for col_n, width in enumerate(col_width):
                 adj_width = width - 0.005 * width**2
