@@ -375,7 +375,6 @@ class Volume:
             Shows whether there is a power outage is in effect.
             Default is no outage.
         """
-        self.phi = 0  # Recalculate fatality rate
         self.fail_modes = []
         # Probability of power failure in the building:
         # PFD_power if no outage, 1 if there is outage
@@ -441,7 +440,6 @@ class Volume:
         O2_conc = conc_vent(self.volume, q_leak, Q_fan, tau)
         F_i = self._fatality_prob(O2_conc)
         phi_i = P_i*F_i
-        self.phi += phi_i
         f_mode = failure_mode(phi_i, source, failure_mode_name, O2_conc,
                               leak_failure_rate, P_i, F_i,
                               PFD_power_build == 1, q_leak, tau, Q_fan, 0, N)
@@ -479,7 +477,6 @@ class Volume:
             O2_conc = conc_vent(self.volume, q_leak, Q_fan, tau)
             F_i = self._fatality_prob(O2_conc)
             phi_i = P_i*F_i
-            self.phi += phi_i
             f_mode = failure_mode(phi_i, source, failure_mode_name, O2_conc,
                                   leak_failure_rate, P_i, F_i,
                                   PFD_power_build == 1, q_leak, tau, Q_fan,
@@ -546,6 +543,7 @@ class Volume:
         int
             ODH class.
         """
+        self.phi = sum((fm.phi for fm in self.fail_modes))
         if self.phi < 1e-7/ureg.hr:
             return 0
         elif self.phi < 1e-5/ureg.hr:
