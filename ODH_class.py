@@ -733,7 +733,7 @@ def conc_vent(V, R, Q, t):
         Oxygen concentration.
     """
     if Q > 0:
-        C = 0.21/(Q+R) * (Q+R*math.e**-(Q+R)/V*t)
+        C = 0.21/(Q+R) * (Q+R*math.e**-((Q+R)/V*t))
     elif abs(Q) <= R:
         C = 0.21*math.e**-(R/V*t)
     elif abs(Q) > R:
