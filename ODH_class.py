@@ -543,7 +543,6 @@ class Volume:
         int
             ODH class.
         """
-        self.phi = sum((fm.phi for fm in self.fail_modes))
         if self.phi < 1e-7/ureg.hr:
             return 0
         elif self.phi < 1e-5/ureg.hr:
