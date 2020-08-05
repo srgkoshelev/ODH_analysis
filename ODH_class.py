@@ -638,6 +638,8 @@ class Volume:
                     else:
                         worksheet.write(row_n, col_n, data)
                     col_width[col_n] = max(col_width[col_n], len(str(data)))
+            # Writing total/summary
+            worksheet.write(N_rows+1, N_cols, self.phi)
             sci_format = workbook.add_format({'num_format': '0.00E+00'},)
             flow_format = workbook.add_format({'num_format': '#'},)
             percent_format = workbook.add_format({'num_format': '0%'},)
