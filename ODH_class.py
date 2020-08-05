@@ -359,6 +359,9 @@ class Volume:
         self.Q_fan = Q_fan
         self.N_fans = N_fans
         self.Test_period = Test_period
+        # Calculate fan probability of failure
+        self._fan_fail()
+        # TODO should be external function; Don't need to keep fan info?
 
     def odh(self, sources, power_outage=False):
         """Calculate ODH fatality rate for given `Source`s.
@@ -380,8 +383,6 @@ class Volume:
         # PFD_power if no outage, 1 if there is outage
         PFD_power_build = (power_outage or
                            TABLE_1['Electrical Power Failure']['Demand rate'])
-        # Calculate fan probability of failure
-        self._fan_fail(self.Test_period, self.Q_fan, self.N_fans)
         # Calculate fatality rates for each source
         for source in sources:
             for failure_mode_name, leak in source.leaks.items():
@@ -483,29 +484,20 @@ class Volume:
                                   N_fan, N)
             self.fail_modes.append(f_mode)
 
-    def _fan_fail(self, Test_period, Q_fan, N_fans):
+    def _fan_fail(self):
         """Calculate (Probability, flow) pairs for all combinations of fans
         working.
 
         All fans are expected to have same volume flow.
-
-        Parameters
-        ----------
-        Test_period : ureg.Quantity {time: 1}
-            Test period of the fans.
-        Q_fan : ureg.Quantity {length: 3, time: -1}
-            Volumetric flow of a single ODH fan installed in the volume.
-        N_fans : int
-            Number of fans installed.
         """
         # TODO add fans with different volumetric rates (see report as well)
-        # TODO method should use self.Q_fan, self.N_fans instead of parameters
         Fail_rate = self.lambda_fan
         Fan_flowrates = []
-        for m in range(N_fans+1):
+        for m in range(self.N_fans+1):
             # Probability of exactly m units starting
-            P_m_fan_work = prob_m_of_n(m, N_fans, Test_period, Fail_rate)
-            flowrate = Q_fan*m
+            P_m_fan_work = prob_m_of_n(m, self.N_fans, self.Test_period,
+                                       Fail_rate)
+            flowrate = self.Q_fan*m
             if flowrate == Q_('0 m**3/min'):
                 flowrate = self.vent_rate
             Fan_flowrates.append((P_m_fan_work, flowrate, m))
