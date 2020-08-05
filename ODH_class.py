@@ -25,6 +25,8 @@ PFD_ODH = Q_('2 * 10^-3')
 # TODO Update to value from J. Anderson's document
 TRANSFER_LINE_LEAK_AREA = Q_('10 mm^2')
 SHOW_SENS = 5e-8/ureg.hr
+# Min required air intake from Table 6.1, ASHRAE 62-2001
+VENTILATION = 0.06 * ureg.ft**3/(ureg.min*ureg.ft**2)
 
 failure_mode = namedtuple('Failure_mode', ['phi', 'source', 'name',
                                            'O2_conc', 'leak_fr', 'P_i',
@@ -333,7 +335,7 @@ class Source:
 
 class Volume:
     """Volume/building affected by inert gases."""
-    def __init__(self, name, volume, Q_fan, N_fans, Test_period):
+    def __init__(self, name, area, height, Q_fan, N_fans, Test_period):
         """Define a volume affected by inert gas release from  a `Source`.
 
         Parameters
@@ -350,7 +352,8 @@ class Volume:
             Test period of the fans.
         """
         self.name = name
-        self.volume = volume
+        self.volume = area * height
+        self.vent_rate = VENTILATION * area  # Required ventilation rate
         self.PFD_ODH = PFD_ODH  # Default value for ODH system failure
         self.lambda_fan = TABLE_2['Fan']['Failure to run']
         self.Q_fan = Q_fan
@@ -434,7 +437,7 @@ class Volume:
         P_no_response = float(PFD_power_build)*float(sol_PFD) +\
             (1-PFD_power_build)*self.PFD_ODH
         P_i = leak_failure_rate * P_no_response
-        Q_fan = 0 * ureg('ft^3/min')
+        Q_fan = self.vent_rate
         O2_conc = conc_vent(self.volume, q_leak, Q_fan, tau)
         F_i = self._fatality_prob(O2_conc)
         phi_i = P_i*F_i
@@ -499,12 +502,16 @@ class Volume:
             Number of fans installed.
         """
         # TODO add fans with different volumetric rates (see report as well)
+        # TODO method should use self.Q_fan, self.N_fans instead of parameters
         Fail_rate = self.lambda_fan
         Fan_flowrates = []
         for m in range(N_fans+1):
             # Probability of exactly m units starting
             P_m_fan_work = prob_m_of_n(m, N_fans, Test_period, Fail_rate)
-            Fan_flowrates.append((P_m_fan_work, Q_fan*m, m))
+            flowrate = Q_fan*m
+            if flowrate == Q_('0 m**3/min'):
+                flowrate = self.vent_rate
+            Fan_flowrates.append((P_m_fan_work, flowrate, m))
         self.Fan_flowrates = Fan_flowrates
 
     def _fatality_prob(self, O2_conc):
@@ -718,7 +725,7 @@ def conc_vent(V, R, Q, t):
         to blowing air into the confined space, negative - drawing contaminated
         air outside.
     t : ureg.Quantity {time: 1}
-        time, beginning of release is at `t`=0.
+        time, beginning of release is at `t` = 0.
 
     Returns
     -------
