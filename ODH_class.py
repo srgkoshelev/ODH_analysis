@@ -551,8 +551,14 @@ class Volume:
         elif self.phi < 1e-3/ureg.hr:
             return 2
         else:
+            # TODO add a custom exception for ODH > 2
             print('ODH fatality rate is too high. Please, check calculations')
             return None
+
+    @property
+    def phi(self):
+        return sum((fm.phi for fm in self.fail_modes))
+
 
     def report(self, brief=True, sens=None):
         """Print a report for failure modes and effects.
