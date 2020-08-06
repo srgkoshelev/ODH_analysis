@@ -75,7 +75,7 @@ class Source:
         self.volume.ito(ureg.feet**3)
         # By default assume there is no isolation valve
         # that is used by ODH system
-        self.sol_PFD = ((not isol_valve) or
+        self.sol_PFD = (int(not isol_valve) or
                         TABLE_2['Valve, solenoid']['Failure to operate'])
 
     def gas_pipe_failure(self, Pipe, fluid=None, N_welds=1, max_flow=None):
@@ -391,7 +391,7 @@ class Volume:
                     self._fatality_no_response(source, failure_mode_name, leak,
                                                source.sol_PFD, PFD_power_build)
                     self._fatality_fan_powered(source, failure_mode_name, leak,
-                                               PFD_power_build)
+                                               source.sol_PFD, PFD_power_build)
                 else:
                     # TODO rework constant leak (will throw errors)
                     raise NotImplementedError('Constant leak analysis is not '
@@ -434,7 +434,7 @@ class Volume:
             Probability of power failure.
         """
         (leak_failure_rate, q_leak, tau, N) = leak
-        P_no_response = float(PFD_power_build)*float(sol_PFD) +\
+        P_no_response = float(PFD_power_build)*float(sol_PFD) + \
             (1-PFD_power_build)*self.PFD_ODH
         P_i = leak_failure_rate * P_no_response
         Q_fan = self.vent_rate
@@ -446,7 +446,7 @@ class Volume:
                               PFD_power_build == 1, q_leak, tau, Q_fan, 0, N)
         self.fail_modes.append(f_mode)
 
-    def _fatality_fan_powered(self, source, failure_mode_name, leak,
+    def _fatality_fan_powered(self, source, failure_mode_name, leak, sol_PFD,
                               PFD_power_build):
         """Calculate fatality rates for fan failure on demand.
 
@@ -473,7 +473,8 @@ class Volume:
         for (P_fan, Q_fan, N_fan) in self.Fan_flowrates:
             # Probability of power on, ODH system working, and m number of fans
             # with flow rate Q_fan on.
-            P_response = (1-PFD_power_build) * (1-self.PFD_ODH) * P_fan
+            P_response = (1-PFD_power_build) * (1-self.PFD_ODH) * \
+                sol_PFD * P_fan
             P_i = leak_failure_rate * P_response
             O2_conc = conc_vent(self.volume, q_leak, Q_fan, tau)
             F_i = self._fatality_prob(O2_conc)
