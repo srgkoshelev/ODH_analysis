@@ -434,7 +434,7 @@ class Volume:
             Probability of power failure.
         """
         (leak_failure_rate, q_leak, tau, N) = leak
-        P_no_response = float(PFD_power_build)*float(sol_PFD) + \
+        P_no_response = float(PFD_power_build) * sol_PFD + \
             (1-PFD_power_build)*self.PFD_ODH
         P_i = leak_failure_rate * P_no_response
         Q_fan = self.vent_rate
