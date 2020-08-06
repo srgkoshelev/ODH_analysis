@@ -26,7 +26,7 @@ PFD_ODH = Q_('2 * 10^-3')
 TRANSFER_LINE_LEAK_AREA = Q_('10 mm^2')
 SHOW_SENS = 5e-8/ureg.hr
 # Min required air intake from Table 6.1, ASHRAE 62-2001
-VENTILATION = 0.06 * ureg.ft**3/(ureg.min*ureg.ft**2)
+ASHRAE_MIN_FLOW = 0.06 * ureg.ft**3/(ureg.min*ureg.ft**2)
 
 failure_mode = namedtuple('Failure_mode', ['phi', 'source', 'name',
                                            'O2_conc', 'leak_fr', 'P_i',
@@ -335,7 +335,8 @@ class Source:
 
 class Volume:
     """Volume/building affected by inert gases."""
-    def __init__(self, name, area, height, Q_fan, N_fans, Test_period):
+    def __init__(self, name, volume, Q_fan, N_fans, Test_period,
+                 vent_rate=0*ureg.ft**3/ureg.min):
         """Define a volume affected by inert gas release from  a `Source`.
 
         Parameters
@@ -350,10 +351,12 @@ class Volume:
             Number of fans installed.
         Test_period : ureg.Quantity {time: 1}
             Test period of the fans.
+        vent_rate : ureg.Quantity {length: 3, time: -1}
+            Min volumetric flow required or present in the building.
         """
         self.name = name
-        self.volume = area * height
-        self.vent_rate = VENTILATION * area  # Required ventilation rate
+        self.volume = volume
+        self.vent_rate = vent_rate
         self.PFD_ODH = PFD_ODH  # Default value for ODH system failure
         self.lambda_fan = TABLE_2['Fan']['Failure to run']
         self.Q_fan = Q_fan
