@@ -34,6 +34,10 @@ failure_mode = namedtuple('Failure_mode', ['phi', 'source', 'name',
                                            'Q_fan', 'N_fan', 'N'])
 
 
+class ODHError(Exception):
+    pass
+
+
 class Source:
     """Source of inert gas
 
