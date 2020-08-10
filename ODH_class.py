@@ -667,9 +667,10 @@ class Volume:
                 adj_width = width - 0.005 * width**2
                 worksheet.set_column(col_n, col_n, adj_width)
             # Adding usability
-            worksheet.conditional_format(1, N_cols-1, N_rows-1, N_cols-1,
-            {'type': '3_color_scale', 'min_color': '#008000',
-             'max_color': '#FF0000'})
+            worksheet.conditional_format(
+                1, N_cols-1, N_rows-1, N_cols-1,
+                {'type': '3_color_scale', 'min_color': '#008000',
+                 'max_color': '#FF0000'})
             worksheet.freeze_panes(1, 0)
 
     def __str__(self):
