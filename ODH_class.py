@@ -231,6 +231,46 @@ class Source:
             self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
                                 tau.to(ureg.min), N)
 
+    def flange_failure(self, Pipe, fluid=None, N=1):
+        """Add reinforced or preformed gasket flange failure
+        to leaks dict.
+
+        Store failure rate, flow rate and expected time duration of
+        the event for transfer line failure. Based on FESHM 4240.
+        Failure modes are analyzed by `Volume.odh` method.
+
+        Parameters
+        ----------
+        Pipe : heat_transfer.Pipe
+        fluid : heat_transfer.ThermState
+            Thermodynamic state of the fluid stored in the source.
+        N : int
+            Number of reinforced seal connections on the Pipe.
+        """
+        # TODO Make leak and rupture areas adjustable, add info to docstring
+        table = TABLE_2['Flange, reinforced gasket']
+        area_cases = {
+            'Leak': table['Leak']['Area'],
+            'Rupture': Pipe.area}
+        for mode in table:
+            name = f'Flange {mode.lower()}: {Pipe}'
+            if isinstance(table[mode], dict):
+                failure_rate = N * table[mode]['Failure rate']
+            else:
+                failure_rate = N * table[mode]
+            area = area_cases[mode]
+            # TODO move this and gas leak check to separate method
+            if area > Pipe.area:
+                logger.warning('Leak area cannot be larger'
+                               ' than pipe area.')
+                continue
+            # If fluid not defined use fluid of the Source
+            fluid = fluid or self.fluid
+            q_std = self._leak_flow(Pipe, area, fluid)
+            tau = self.volume/q_std
+            self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
+                                tau.to(ureg.min), N)
+
     def constant_leak(self, name, flow_rate, fluid=None, N=1):
         """Add constant leak to leaks dict.
 
