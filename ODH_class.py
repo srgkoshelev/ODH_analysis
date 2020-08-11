@@ -379,9 +379,9 @@ class Source:
             return None
 
     def __str__(self):
-        return f'{self.name}, ODH source with ' + \
+        return f'{self.name}, ' + \
             f'{self.volume.to(ureg.ft**3):.3g~} ' + \
-            f'of {self.fluid.name} gas.'
+            f'of {self.fluid.name}'
 
     def print_leaks(self):
         """Print information on the leaks defined for the source."""
