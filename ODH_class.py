@@ -396,7 +396,8 @@ class Source:
 
 class Volume:
     """Volume/building affected by inert gases."""
-    def __init__(self, name, volume, Q_fan, N_fans, Test_period,
+    def __init__(self, name, volume, *, Q_fan, N_fans, Test_period,
+                 lambda_fan=TABLE_2['Fan']['Failure to run'],
                  vent_rate=0*ureg.ft**3/ureg.min):
         """Define a volume affected by inert gas release from  a `Source`.
 
@@ -414,12 +415,14 @@ class Volume:
             Test period of the fans.
         vent_rate : ureg.Quantity {length: 3, time: -1}
             Min volumetric flow required or present in the building.
+        lambda_fan : ureg.Quantity {time: -1}
+            Failure rate of the fans in the building.
         """
         self.name = name
         self.volume = volume
         self.vent_rate = vent_rate
         self.PFD_ODH = PFD_ODH  # Default value for ODH system failure
-        self.lambda_fan = TABLE_2['Fan']['Failure to run']
+        self.lambda_fan = lambda_fan
         self.Q_fan = Q_fan
         self.N_fans = N_fans
         self.Test_period = Test_period
@@ -630,7 +633,6 @@ class Volume:
     @property
     def phi(self):
         return sum((fm.phi for fm in self.fail_modes))
-
 
     def report(self, brief=True, sens=None):
         """Print a report for failure modes and effects.
