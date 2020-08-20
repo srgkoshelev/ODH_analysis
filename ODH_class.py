@@ -701,7 +701,7 @@ class Volume:
                 row.append(f'{f_mode.source.name} {f_mode.name}')
                 row.append(f'{f_mode.N_fan}')
                 row.append(f'{f_mode.O2_conc:.0%}')
-                row.append(f'{f_mode.tau.to(ureg.min).magnitude:.2}')
+                row.append(f'{f_mode.tau.to(ureg.min).magnitude:,.1f}')
                 row.append(f'{f_mode.phi.to(1/ureg.hr).magnitude:.2}')
                 table.append(row)
         return table
@@ -709,21 +709,25 @@ class Volume:
     def report_table(self, filename=None):
         """Make a table with the calculation results."""
         table = []
-        header = ['Source', 'Failure', '# of', 'Leak failure rate, 1/hr',
-                  'Leak rate, SCFM', '# fans working', 'Fan rate, SCFM',
-                  'Event duration, min', ' Oxygen concentration',
-                  'Fatality prob', 'Fatality rate, 1/hr']
+        header = ['Source', 'Failure', 'Event failure rate, 1/hr', '# of',
+                  'Total failure rate, 1/hr', 'Leak rate, SCFM',
+                  '# fans working', 'Fan rate, SCFM', 'Event duration, min',
+                  'Oxygen concentration', 'Fatality prob',
+                  'Fatality rate, 1/hr']
         # 'Total failure rate', 'ODH protection PFD', 'Building is powered'
         table.append(header)
         self.fail_modes.sort(key=lambda x: x.source.name)
         for f_mode in self.fail_modes:
             if f_mode.leak_fr is not None:
+                event_fr_str = (f_mode.leak_fr/f_mode.N).to(1/ureg.hr).magnitude
                 leak_fr_str = f_mode.leak_fr.to(1/ureg.hr).magnitude
             else:
+                event_fr_str = 'N/A'
                 leak_fr_str = 'N/A'
             table.append([
                 f_mode.source.name,
                 f_mode.name,
+                event_fr_str,
                 f_mode.N,
                 leak_fr_str,
                 f_mode.q_leak.to(ureg.ft**3/ureg.min).magnitude,
@@ -734,31 +738,32 @@ class Volume:
                 f_mode.F_i,
                 f_mode.phi.to(1/ureg.hr).magnitude])
         with xlsxwriter.Workbook('ODH_report.xlsx') as workbook:
-            N_cols = len(table[0])
             header_format = workbook.add_format({'bold': True,
                                                  'font_size': 12,
                                                  'bottom': 3})
             worksheet = workbook.add_worksheet()
-            col_width = [0] * N_cols
-            N_rows = 0
+            col_width = [len(x) for x in table[0]]
             for row_n, row in enumerate(table):
-                N_rows += 1
                 for col_n, data in enumerate(row):
-                    if row_n == 0:
-                        worksheet.write(row_n, col_n, data, header_format)
-                    else:
-                        worksheet.write(row_n, col_n, data)
-                    col_width[col_n] = max(col_width[col_n], len(str(data)))
+                    worksheet.write(row_n, col_n, data)
+                    if col_n in (0, 1, 10):
+                        # For source names, failure names
+                        # and 'Total failure rate'
+                        col_width[col_n] = max(col_width[col_n], len(str(data)))
             sci_format = workbook.add_format({'num_format': '0.00E+00'},)
             flow_format = workbook.add_format({'num_format': '#'},)
             percent_format = workbook.add_format({'num_format': '0%'},)
             number_format = workbook.add_format({'num_format': '0'},)
-            worksheet.set_column(3, 3, None, sci_format)
-            worksheet.set_column(4, 4, None, flow_format)
-            worksheet.set_column(7, 7, None, sci_format)
-            worksheet.set_column(8, 8, None, percent_format)
-            worksheet.set_column(9, 10, None, sci_format)
+            worksheet.set_row(0, None, header_format)
+            worksheet.set_column(2, 2, None, sci_format)
+            worksheet.set_column(4, 4, None, sci_format)
+            worksheet.set_column(5, 5, None, flow_format)
+            worksheet.set_column(8, 8, None, sci_format)
+            worksheet.set_column(9, 9, None, percent_format)
+            worksheet.set_column(10, 11, None, sci_format)
             # Writing total/summary
+            N_rows = len(table)
+            N_cols = len(table[0])
             worksheet.write(N_rows+1, N_cols-2, 'Total fatality rate, 1/hr')
             worksheet.write(N_rows+1, N_cols-1,
                             self.phi.to(1/ureg.hr).magnitude)
