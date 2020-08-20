@@ -143,9 +143,15 @@ class Source:
     def transfer_line_failure(self, Pipe, fluid=None, N=1):
         """Add transfer line failure to leaks dict.
 
+        Two failure modes described in FESHM 4240, Table 1 are considered:
+        bayonet leak and blowout (rupture). Similar to other failure modes,
+        N, number of seals, increases the failure rate. Base failure rates
+        are taken from Table 1. Leak area is defined globally as
+        `TRANSFER_LINE_LEAK_AREA`. Flow rate is determined with Darcy
+        equation using lumped resistance coefficients.
         Store failure rate, flow rate and expected time duration of
-        the event for transfer line failure. Based on FESHM 4240.
-        Failure modes are analyzed by `Volume.odh` method.
+        the event for transfer line failure. Failure modes are analyzed
+        by `Volume.odh` method.
 
         Parameters
         ----------
@@ -488,8 +494,10 @@ class Volume:
             Name of the failure mode
         leak : tuple (ureg.Quantity {time: -1},
                       ureg.Quantity {length: 3, time: -1},
-                      ureg.Quantity {time: 1})
-            Leak failure rate, volumetric flow rate, and time of the event.
+                      ureg.Quantity {time: 1},
+                      int)
+            Leak failure rate, volumetric flow rate, event duration, and number
+            of events.
         sol_PFD : float
             Probability of source solenoid failure.
         PFD_power_building : float
@@ -524,8 +532,10 @@ class Volume:
             Name of the failure mode
         leak : tuple (ureg.Quantity {time: -1},
                       ureg.Quantity {length: 3, time: -1},
-                      ureg.Quantity {time: 1})
-            Leak failure rate, volumetric flow rate, and time of the event.
+                      ureg.Quantity {time: 1},
+                      int)
+            Leak failure rate, volumetric flow rate, event duration, and number
+            of events.
         sol_PFD : float
             Probability of source solenoid failure.
         PFD_power_building : float
@@ -557,8 +567,10 @@ class Volume:
             Name of the failure mode
         leak : tuple (ureg.Quantity {time: -1},
                       ureg.Quantity {length: 3, time: -1},
-                      ureg.Quantity {time: 1})
-            Leak failure rate, volumetric flow rate, and time of the event.
+                      ureg.Quantity {time: 1},
+                      int)
+            Leak failure rate, volumetric flow rate, event duration, and number
+            of events.
         """
         (leak_failure_rate, q_leak, tau, N) = leak
         O2_conc = conc_final(self.volume, q_leak, self.vent_rate)
