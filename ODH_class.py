@@ -104,18 +104,18 @@ class Source:
         fluid = fluid or self.fluid
         # Failure rate coefficients; Piping failure rate is per unit of length,
         # weld is dependent on number of welds, pipe OD and wall thickness
-        failure_rate_coeff = {'Piping': (Pipe.L, self.N),
-                              'Pipe weld': (Pipe.OD / Pipe.wall,
+        failure_rate_coeff = {'Piping': (tube.L, self.N),
+                              'Pipe weld': (tube.OD / tube.wall,
                                             N_welds*self.N)}
         # Piping and weld leaks as per Table 2
         for cause in ['Piping', 'Pipe weld']:
             for mode in TABLE_2[cause].keys():
-                if Pipe.D > 2 or mode != 'Large leak':  # Large leak only for D > 2"
-                    name = f'{cause} {mode.lower()}: {Pipe}'
-                    TempPipe = copy(Pipe)
+                if tube.D > 2 or mode != 'Large leak':  # Large leak only for D > 2"
+                    name = f'{cause} {mode.lower()}: {tube}'
+                    temp_tube = copy(tube)
                     # Average path for the flow will be half of piping length
                     # for gas piping
-                    TempPipe.L = Pipe.L / 2
+                    temp_tube.L = tube.L / 2
                     fr_coef = failure_rate_coeff[cause][0]
                     N_events = failure_rate_coeff[cause][1]
                     total_fr_coef = fr_coef * N_events
@@ -123,16 +123,16 @@ class Source:
                         failure_rate = total_fr_coef * TABLE_2[cause][mode]
                         # For rupture calculate flow through available
                         # pipe area
-                        area = Pipe.area
+                        area = tube.area
                     else:
                         failure_rate = total_fr_coef * \
                             TABLE_2[cause][mode]['Failure rate']
                         area = TABLE_2[cause][mode]['Area']
-                        if area > Pipe.area:
+                        if area > tube.area:
                             logger.warning('Leak area cannot be larger'
                                            ' than pipe area.')
                             continue
-                    q_std = self._leak_flow(TempPipe, area, fluid)
+                    q_std = self._leak_flow(temp_tube, area, fluid)
                     if max_flow is not None:
                         q_std_max = ht.piping.to_standard_flow(max_flow, fluid)
                         q_std = min(q_std, q_std_max)
