@@ -334,10 +334,14 @@ class Source:
                             tau.to(ureg.min), N_events)
 
     def _leak_flow(self, tube, area, fluid):
-        """Calculate leak flow through a pipe
+        """Calculate leak flow/release for a given piping element.
 
-        The flow is assumed to go through the pipe and exit with optional
-        orifice imitating a hole in the pipe wall.
+        For this calculation the gas is assumed to have no pressure loss on
+        entry due to the different possible options. This makes analysis simple
+        and conservative.
+        For the full pipe rupture case it is usually assumed that the release
+        area is equal to tube cross section area. For other leak cases, the
+        hole in the piping is considered to be a square-edged orifice.
 
         Parameters
         ----------
