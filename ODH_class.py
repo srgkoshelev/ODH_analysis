@@ -82,20 +82,26 @@ class Source:
         self.sol_PFD = (int(not isol_valve) or
                         TABLE_2['Valve, solenoid']['Failure to operate'])
 
-    def gas_pipe_failure(self, Pipe, fluid=None, N_welds=1, max_flow=None):
-        """Add gas pipe failure to the leaks dict.
+    def pipe_failure(self, tube, fluid=None, N_welds=1, max_flow=None):
+        """Add pipe failure to the leaks dict.
 
-        Store failure rate, flow rate and expected time duration of the
-        event for gas pipe failure. Based on FESHM 4240.
+        For a given tube calculate leak parameters as following:
+        - failure rate
+        - standard volumetric flow
+        - duration of the release
+        - number of possible similar events
+        for all failure modes for piping and welds listed in Table 2 of
+        FESHM 4240.
+
         Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
-        Pipe : heat_transfer.piping.Pipe
+        tube : heat_transfer.piping.Tube
         fluid : heat_transfer.ThermState
-            Thermodynamic state of the fluid stored in the source.
+            Thermodynamic state of the fluid for the release.
         N_welds : int
-            Number of welds on the gas pipe.
+            Number of welds on the tube.
         max_flow : ureg.Quantity {mass: 1, time: -1} or {length: 3, time: -1}
             Max mass or volumetric flow through if limited,
             e.g. by compressor output.
@@ -143,15 +149,19 @@ class Source:
     def transfer_line_failure(self, Pipe, fluid=None, N=1):
         """Add transfer line failure to leaks dict.
 
-        Two failure modes described in FESHM 4240, Table 1 are considered:
-        bayonet leak and blowout (rupture). Similar to other failure modes,
-        N, number of seals, increases the failure rate. Base failure rates
-        are taken from Table 1. Leak area is defined globally as
-        `TRANSFER_LINE_LEAK_AREA`. Flow rate is determined with Darcy
-        equation using lumped resistance coefficients.
-        Store failure rate, flow rate and expected time duration of
-        the event for transfer line failure. Failure modes are analyzed
-        by `Volume.odh` method.
+        For a given tube calculate leak parameters as following:
+        - failure rate
+        - standard volumetric flow
+        - duration of the release
+        - number of possible similar events
+        for all failure modes for transfer line listed in Table 1 of
+        FESHM 4240. Note that Rationale for Table 1: “Fermilab Equipment
+        Failure Rate Estimates” clearly states that only bayonet failures
+        are considered for these failure modes. Therefore only bayonet leak and
+        blowout (rupture) are considered. Leak area is not defined in
+        FESHM 4240 and is defined globally as `TRANSFER_LINE_LEAK_AREA`.
+
+        Failure modes are analyzed by `Volume.odh` method.
 
         Parameters
         ----------
@@ -159,7 +169,7 @@ class Source:
         fluid : heat_transfer.ThermState
             Thermodynamic state of the fluid stored in the source.
         N : int
-            Number of bayonets/soft seals on the transfer line
+            Number of bayonets/soft seals on the transfer line.
         """
         # TODO Make leak and rupture areas adjustable, add info to docstring
         area_cases = {'Leak': TRANSFER_LINE_LEAK_AREA,
@@ -414,7 +424,7 @@ class Source:
 
 class Volume:
     """Volume/building affected by inert gases."""
-    def __init__(self, name, volume, *, Q_fan, N_fans, Test_period,
+    def __init__(self, name, volume, *, Q_fan, N_fans, T_fan,
                  lambda_fan=TABLE_2['Fan']['Failure to run'],
                  vent_rate=0*ureg.ft**3/ureg.min):
         """Define a volume affected by inert gas release from  a `Source`.
@@ -429,7 +439,7 @@ class Volume:
             Volumetric flow of a single ODH fan installed in the volume.
         N_fans : int
             Number of fans installed.
-        Test_period : ureg.Quantity {time: 1}
+        T_fan : ureg.Quantity {time: 1}
             Test period of the fans.
         vent_rate : ureg.Quantity {length: 3, time: -1}
             Min volumetric flow required or present in the building.
@@ -440,10 +450,11 @@ class Volume:
         self.volume = volume
         self.vent_rate = vent_rate
         self.PFD_ODH = PFD_ODH  # Default value for ODH system failure
+        # TODO Should be explicit/with default option
         self.lambda_fan = lambda_fan
         self.Q_fan = Q_fan
         self.N_fans = N_fans
-        self.Test_period = Test_period
+        self.Test_period = T_fan
         # Calculate fan probability of failure
         self._fan_fail()
         # TODO should be external function; Don't need to keep fan info?
