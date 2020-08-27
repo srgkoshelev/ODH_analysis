@@ -313,7 +313,10 @@ class Source:
         """
         tau = self.volume/flow_rate
         q_std = ht.piping.to_standard_flow(flow_rate, fluid)
-        self.leaks[name] = (None, N*q_std, tau.to(ureg.min), N*self.N)
+        # Failure rate assumes the volume instantly refilled
+        # after being completely emptied, and continues release
+        failure_rate = (1/tau).to(1/ureg.hr)
+        self.leaks[name] = (failure_rate, N*q_std, tau.to(ureg.min), N*self.N)
 
     def failure_mode(self, name, failure_rate, flow_rate, fluid=None, N=1):
         """Add general failure mode to leaks dict.
@@ -488,8 +491,6 @@ class Volume:
                                                source.sol_PFD, PFD_power_build)
                     self._fatality_fan_powered(source, failure_mode_name, leak,
                                                source.sol_PFD, PFD_power_build)
-                else:
-                    self._continuous_leak(source, failure_mode_name, leak)
 
     def _fatality_no_response(self, source, failure_mode_name, leak, sol_PFD,
                               PFD_power_build):
@@ -570,37 +571,6 @@ class Volume:
                                   leak_failure_rate, P_i, F_i,
                                   PFD_power_build == 1, q_leak, tau, Q_fan,
                                   N_fan, N)
-            self.fail_modes.append(f_mode)
-
-    def _continuous_leak(self, source, failure_mode_name, leak):
-        """Analyze special case of continuous leak.
-
-        Parameters
-        ----------
-        source : Source
-        failure_mode_name : str
-            Name of the failure mode
-        leak : tuple (ureg.Quantity {time: -1},
-                      ureg.Quantity {length: 3, time: -1},
-                      ureg.Quantity {time: 1},
-                      int)
-            Leak failure rate, volumetric flow rate, event duration, and number
-            of events.
-        """
-        (leak_failure_rate, q_leak, tau, N) = leak
-        O2_conc = conc_final(self.volume, q_leak, self.vent_rate)
-        F_i = self._fatality_prob(O2_conc)
-        if F_i > 0:
-            raise ODHError(f'Constant leak can be fatal: {source}, '
-                           f'{q_leak:.3g~}. Detailed analysis required.')
-            # phi_i = F_i / tau  #  Assessing fatality rate of the cont. leak
-        else:
-            phi_i = 0 / ureg.hr
-            P_i = None
-            f_mode = failure_mode(phi_i, source, failure_mode_name, O2_conc,
-                                  leak_failure_rate, P_i, F_i,
-                                  False, q_leak, tau, self.vent_rate,
-                                  0, N)
             self.fail_modes.append(f_mode)
 
     def _fan_fail(self):
