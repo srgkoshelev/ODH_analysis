@@ -691,7 +691,7 @@ class Volume:
                 table.append(row)
         return table
 
-    def report_table(self, filename=None):
+    def report_table(self, filename='ODH_report'):
         """Make a table with the calculation results."""
         table = []
         header = ['Source', 'Failure', 'Event failure rate, 1/hr', '# of',
@@ -722,7 +722,8 @@ class Volume:
                 f_mode.O2_conc,
                 f_mode.F_i,
                 f_mode.phi.to(1/ureg.hr).magnitude])
-        with xlsxwriter.Workbook('ODH_report.xlsx') as workbook:
+        filename += '.xlsx'
+        with xlsxwriter.Workbook(filename) as workbook:
             header_format = workbook.add_format({'bold': True,
                                                  'font_size': 12,
                                                  'bottom': 3})
