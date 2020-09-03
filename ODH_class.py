@@ -68,7 +68,7 @@ class Source:
         """
         self.name = name
         self.fluid = fluid
-        self.leaks = {}
+        self.leaks = []
         # Number of sources if multiple exist, e.g. gas cylinders
         # Increases probability of failure by N.
         self.N = N
@@ -110,28 +110,28 @@ class Source:
         fluid = fluid or self.fluid
         # Failure rate coefficients; Piping failure rate is per unit of length,
         # weld is dependent on number of welds, pipe OD and wall thickness
-        failure_rate_coeff = {'Piping': (tube.L, self.N),
+        failure_rate_coeff = {'Piping': (tube.L, 1),
                               'Pipe weld': (tube.OD / tube.wall,
-                                            N_welds*self.N)}
+                                            N_welds)}
         # Piping and weld leaks as per Table 2
         for cause in ['Piping', 'Pipe weld']:
             for mode in TABLE_2[cause].keys():
                 if tube.D > 2 or mode != 'Large leak':  # Large leak only for D > 2"
-                    name = f'{cause} {mode.lower()}: {tube}'
+                    name = f'{cause} {mode.lower()}: {tube}, ' + \
+                        f'{tube.L.to(ureg.ft):.3g~}'
                     temp_tube = copy(tube)
                     # Average path for the flow will be half of piping length
                     # for gas piping
                     temp_tube.L = tube.L / 2
                     fr_coef = failure_rate_coeff[cause][0]
                     N_events = failure_rate_coeff[cause][1]
-                    total_fr_coef = fr_coef * N_events
                     if mode == 'Rupture':
-                        failure_rate = total_fr_coef * TABLE_2[cause][mode]
+                        failure_rate = fr_coef * TABLE_2[cause][mode]
                         # For rupture calculate flow through available
                         # pipe area
                         area = tube.area
                     else:
-                        failure_rate = total_fr_coef * \
+                        failure_rate = fr_coef * \
                             TABLE_2[cause][mode]['Failure rate']
                         area = TABLE_2[cause][mode]['Area']
                         if area > tube.area:
@@ -142,9 +142,8 @@ class Source:
                     if max_flow is not None:
                         q_std_max = ht.piping.to_standard_flow(max_flow, fluid)
                         q_std = min(q_std, q_std_max)
-                    tau = self.volume/q_std
-                    self.leaks[name] = (failure_rate.to(1/ureg.hr), q_std,
-                                        tau.to(ureg.min), N_events)
+                    self.leaks.append(
+                        self._make_leak(name, failure_rate, q_std, N_events))
 
     def transfer_line_failure(self, Pipe, fluid=None, N=1):
         """Add transfer line failure to leaks dict.
@@ -176,8 +175,7 @@ class Source:
                       'Rupture': Pipe.area}
         for mode in TABLE_1['Fluid line']:
             name = f'Fluid line {mode.lower()}: {Pipe}'
-            N_events = N * self.N
-            total_failure_rate = N_events * TABLE_1['Fluid line'][mode]
+            failure_rate = TABLE_1['Fluid line'][mode]
             area = area_cases[mode]
             # TODO move this and gas leak check to separate method
             if area > Pipe.area:
@@ -187,9 +185,8 @@ class Source:
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
             q_std = self._leak_flow(Pipe, area, fluid)
-            tau = self.volume/q_std
-            self.leaks[name] = (total_failure_rate.to(1/ureg.hr), q_std,
-                                tau.to(ureg.min), N_events)
+            self.leaks.append(
+                self._make_leak(name, failure_rate, q_std, N))
 
     def dewar_insulation_failure(self, flow_rate, fluid=None):
         """Add dewar insulation failure to leaks dict.
@@ -209,10 +206,8 @@ class Source:
         # If fluid not defined use fluid of the Source
         fluid = fluid or self.fluid
         q_std = ht.piping.to_standard_flow(flow_rate, fluid)
-        tau = self.volume/q_std
-        self.leaks['Dewar insulation failure'] = (failure_rate.to(1/ureg.hr),
-                                                  q_std, tau.to(ureg.min),
-                                                  self.N)
+        self.leaks.append(
+            self._make_leak('Dewar insulation failure', failure_rate, q_std, 1))
 
     def u_tube_failure(self, outer_tube, inner_tube, L, use_rate,
                        fluid=None, N=1):
@@ -237,8 +232,7 @@ class Source:
         for mode in TABLE_1['U-Tube change']:
             flow_path = flow_path_cases[mode]
             name = f'U-Tube {mode.lower()}: {flow_path}'
-            N_events = N * self.N
-            total_failure_rate = N_events * TABLE_1['U-Tube change'][mode] * \
+            failure_rate = TABLE_1['U-Tube change'][mode] * \
                 use_rate
             area = flow_path.area
             # TODO move this and gas leak check to separate method
@@ -249,9 +243,8 @@ class Source:
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
             q_std = self._leak_flow(flow_path, area, fluid)
-            tau = self.volume/q_std
-            self.leaks[name] = (total_failure_rate.to(1/ureg.hr), q_std,
-                                tau.to(ureg.min), N_events)
+            self.leaks.append(
+                self._make_leak(name, failure_rate, q_std, N))
 
     def flange_failure(self, Pipe, fluid=None, N=1):
         """Add reinforced or preformed gasket flange failure
@@ -274,13 +267,12 @@ class Source:
         area_cases = {
             'Leak': table['Leak']['Area'],
             'Rupture': Pipe.area}
-        N_events = N * self.N
         for mode in table:
             name = f'Flange {mode.lower()}: {Pipe}'
             if isinstance(table[mode], dict):
-                total_failure_rate = N_events * table[mode]['Failure rate']
+                failure_rate = table[mode]['Failure rate']
             else:
-                total_failure_rate = N_events * table[mode]
+                failure_rate = table[mode]
             area = area_cases[mode]
             # TODO move this and gas leak check to separate method
             if area > Pipe.area:
@@ -290,9 +282,8 @@ class Source:
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
             q_std = self._leak_flow(Pipe, area, fluid)
-            tau = self.volume/q_std
-            self.leaks[name] = (total_failure_rate.to(1/ureg.hr), q_std,
-                                tau.to(ureg.min), N_events)
+            self.leaks.append(
+                self._make_leak(name, failure_rate, q_std, N))
 
     def constant_leak(self, name, flow_rate, fluid=None, N=1):
         """Add constant leak to leaks dict.
@@ -311,12 +302,14 @@ class Source:
         N : int
             Quantity of similar failure modes.
         """
-        tau = self.volume/flow_rate
         q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         # Failure rate assumes the volume instantly refilled
         # after being completely emptied, and continues release
-        failure_rate = (1/tau).to(1/ureg.hr)
-        self.leaks[name] = (failure_rate, N*q_std, tau.to(ureg.min), N*self.N)
+        # Failure rate for constant leak doesn't depend on N or self.N
+        # Dividing by self.N*N to undo _make_leak multiplication
+        failure_rate = flow_rate/(self.volume*self.N*N)
+        self.leaks.append(
+            self._make_leak(name, failure_rate, N*q_std, N))
 
     def failure_mode(self, name, failure_rate, flow_rate, fluid=None, N=1):
         """Add general failure mode to leaks dict.
@@ -340,11 +333,9 @@ class Source:
         """
         # If fluid not defined use fluid of the Source
         fluid = fluid or self.fluid
-        N_events = N * self.N
         q_std = ht.piping.to_standard_flow(flow_rate, fluid)
-        tau = self.volume/q_std
-        self.leaks[name] = (N_events*failure_rate.to(1/ureg.hr), q_std,
-                            tau.to(ureg.min), N_events)
+        self.leaks.append(
+            self._make_leak(name, failure_rate, q_std, N))
 
     def _leak_flow(self, tube, area, fluid):
         """Calculate leak flow/release for a given piping element.
@@ -382,6 +373,28 @@ class Source:
             TempPiping.insert(1, Hole)
         m_dot = TempPiping.m_dot(ht.P_NTP)
         return ht.piping.to_standard_flow(m_dot, fluid)
+
+    def _make_leak(self, name, failure_rate, q_std, N):
+        """Format failure rate, flow rate and expected time duration of the
+        failure event for a leak.
+
+        Parameters
+        ----------
+        name : str
+            Name of the failure mode
+        failure rate : ureg.Quantity {time: -1}
+            Failure rate of the failure mode,
+            i.e. how often the failure occurs
+        q_std : ureg.Quantity {length: 3, time: -1}
+            Standard volumetric flow rate
+        N : int
+            Quantity of similar failure modes.
+        """
+        N_events = N * self.N
+        tau = self.volume/q_std
+        total_failure_rate = N_events*failure_rate
+        total_failure_rate.ito(1/ureg.hr)
+        return (name, total_failure_rate, q_std, tau.to(ureg.min), N_events)
 
     @staticmethod
     def combine(name, sources):
@@ -484,15 +497,15 @@ class Volume:
                            TABLE_1['Electrical Power Failure']['Demand rate'])
         # Calculate fatality rates for each source
         for source in sources:
-            for failure_mode_name, leak in source.leaks.items():
+            for leak in source.leaks:
                 leak_failure_rate = leak[0]
                 if leak_failure_rate is not None:  # None for constant leak
-                    self._fatality_no_response(source, failure_mode_name, leak,
-                                               source.sol_PFD, PFD_power_build)
-                    self._fatality_fan_powered(source, failure_mode_name, leak,
-                                               source.sol_PFD, PFD_power_build)
+                    self._fatality_no_response(source, leak, source.sol_PFD,
+                                               PFD_power_build)
+                    self._fatality_fan_powered(source, leak, source.sol_PFD,
+                                               PFD_power_build)
 
-    def _fatality_no_response(self, source, failure_mode_name, leak, sol_PFD,
+    def _fatality_no_response(self, source, leak, sol_PFD,
                               PFD_power_build):
         """Calculate fatality rate in the volume for ODH protection failure.
 
@@ -506,9 +519,8 @@ class Volume:
         Parameters
         ----------
         source : Source
-        failure_mode_name : str
-            Name of the failure mode
-        leak : tuple (ureg.Quantity {time: -1},
+        leak : tuple (str,
+                      ureg.Quantity {time: -1},
                       ureg.Quantity {length: 3, time: -1},
                       ureg.Quantity {time: 1},
                       int)
@@ -519,7 +531,7 @@ class Volume:
         PFD_power_building : float
             Probability of power failure.
         """
-        (leak_failure_rate, q_leak, tau, N) = leak
+        (failure_mode_name, leak_failure_rate, q_leak, tau, N) = leak
         P_no_response = float(PFD_power_build) * sol_PFD + \
             (1-PFD_power_build)*self.PFD_ODH
         P_i = leak_failure_rate * P_no_response
@@ -532,8 +544,7 @@ class Volume:
                               PFD_power_build == 1, q_leak, tau, Q_fan, 0, N)
         self.fail_modes.append(f_mode)
 
-    def _fatality_fan_powered(self, source, failure_mode_name, leak, sol_PFD,
-                              PFD_power_build):
+    def _fatality_fan_powered(self, source, leak, sol_PFD, PFD_power_build):
         """Calculate fatality rates for fan failure on demand.
 
         Calculate fatality rates for the case of ODH system responding and
@@ -544,9 +555,8 @@ class Volume:
         Parameters
         ----------
         source : Source
-        failure_mode_name : str
-            Name of the failure mode
-        leak : tuple (ureg.Quantity {time: -1},
+        leak : tuple (str,
+                      ureg.Quantity {time: -1},
                       ureg.Quantity {length: 3, time: -1},
                       ureg.Quantity {time: 1},
                       int)
@@ -557,7 +567,7 @@ class Volume:
         PFD_power_building : float
             Probability of power failure.
         """
-        (leak_failure_rate, q_leak, tau, N) = leak
+        (failure_mode_name, leak_failure_rate, q_leak, tau, N) = leak
         for (P_fan, Q_fan, N_fan) in self.Fan_flowrates:
             # Probability of power on, ODH system working, and m number of fans
             # with flow rate Q_fan on.
@@ -703,18 +713,12 @@ class Volume:
         table.append(header)
         self.fail_modes.sort(key=lambda x: x.source.name)
         for f_mode in self.fail_modes:
-            if f_mode.leak_fr is not None:
-                event_fr_str = (f_mode.leak_fr/f_mode.N).to(1/ureg.hr).magnitude
-                leak_fr_str = f_mode.leak_fr.to(1/ureg.hr).magnitude
-            else:
-                event_fr_str = 'N/A'
-                leak_fr_str = 'N/A'
             table.append([
                 f_mode.source.name,
                 f_mode.name,
-                event_fr_str,
+                (f_mode.leak_fr/f_mode.N).to(1/ureg.hr).magnitude,
                 f_mode.N,
-                leak_fr_str,
+                f_mode.leak_fr.to(1/ureg.hr).magnitude,
                 f_mode.q_leak.to(ureg.ft**3/ureg.min).magnitude,
                 f_mode.N_fan,
                 f_mode.Q_fan.to(ureg.ft**3/ureg.min).magnitude,
