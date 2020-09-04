@@ -140,7 +140,10 @@ class Source:
                             continue
                     q_std = self._leak_flow(temp_tube, area, fluid)
                     if max_flow is not None:
-                        q_std_max = ht.piping.to_standard_flow(max_flow, fluid)
+                        fluid_NTP = fluid.copy()
+                        fluid_NTP.update_kw(P=ht.P_NTP, T=ht.T_NTP)
+                        q_std_max = max_flow.to(ureg.ft**3/ureg.min, 'sf',
+                                                rho=fluid_NTP.Dmass)
                         q_std = min(q_std, q_std_max)
                     self.leaks.append(
                         self._make_leak(name, failure_rate, q_std, N_events))
@@ -188,7 +191,7 @@ class Source:
             self.leaks.append(
                 self._make_leak(name, failure_rate, q_std, N))
 
-    def dewar_insulation_failure(self, flow_rate, fluid=None):
+    def dewar_insulation_failure(self, q_std):
         """Add dewar insulation failure to leaks dict.
 
         Store failure rate, flow rate and expected time duration of the
@@ -197,15 +200,13 @@ class Source:
 
         Parameters
         ----------
-        flow_rate : ureg.Quantity {mass: 1, time: -1} or {length: 3, time: -1}
-            Relief flow rate for the case of dewar insulation failure.
+        q_std : ureg.Quantity {length: 3, time: -1}
+            Standard volumetric flow rate of the relief for the case of
+            dewar insulation failure.
         fluid : heat_transfer.ThermState
             Thermodynamic state of the fluid stored in the source.
         """
         failure_rate = TABLE_1['Dewar']['Loss of vacuum']
-        # If fluid not defined use fluid of the Source
-        fluid = fluid or self.fluid
-        q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         self.leaks.append(
             self._make_leak('Dewar insulation failure', failure_rate, q_std, 1))
 
@@ -285,7 +286,7 @@ class Source:
             self.leaks.append(
                 self._make_leak(name, failure_rate, q_std, N))
 
-    def constant_leak(self, name, flow_rate, fluid=None, N=1):
+    def constant_leak(self, name, q_std, N=1):
         """Add constant leak to leaks dict.
 
         Store flow rate and expected time duration of the
@@ -296,22 +297,20 @@ class Source:
         ----------
         name : str
             Name of the failure mode
-        flow_rate : ureg.Quantity {mass: 1, time: -1} or {length: 3, time: -1}
-        fluid : heat_transfer.ThermState
-            Thermodynamic state of the fluid stored in the source.
+        q_std : ureg.Quantity {length: 3, time: -1}
+            Standard volumetric flow rate.
         N : int
             Quantity of similar failure modes.
         """
-        q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         # Failure rate assumes the volume instantly refilled
         # after being completely emptied, and continues release
         # Failure rate for constant leak doesn't depend on N or self.N
         # Dividing by self.N*N to undo _make_leak multiplication
-        failure_rate = flow_rate/(self.volume*self.N*N)
+        failure_rate = q_std/(self.volume*self.N*N)
         self.leaks.append(
             self._make_leak(name, failure_rate, N*q_std, N))
 
-    def failure_mode(self, name, failure_rate, flow_rate, fluid=None, N=1):
+    def failure_mode(self, name, failure_rate, q_std, N=1):
         """Add general failure mode to leaks dict.
 
         Store failure rate, flow rate and expected time duration of the
@@ -325,15 +324,11 @@ class Source:
         failure rate : ureg.Quantity {time: -1}
             Failure rate of the failure mode,
             i.e. how often the failure occurs
-        flow_rate : ureg.Quantity {mass: 1, time: -1} or {length: 3, time: -1}
-        fluid : heat_transfer.ThermState
-            Thermodynamic state of the fluid stored in the source.
+        q_std : ureg.Quantity {length: 3, time: -1}
+            Standard volumetric flow rate.
         N : int
             Quantity of similar failure modes.
         """
-        # If fluid not defined use fluid of the Source
-        fluid = fluid or self.fluid
-        q_std = ht.piping.to_standard_flow(flow_rate, fluid)
         self.leaks.append(
             self._make_leak(name, failure_rate, q_std, N))
 
@@ -358,8 +353,7 @@ class Source:
         Returns
         -------
         ureg.Quantity {length: 3, time: -1}
-            Standard volumetric flow. Conditions are defined in
-            `heat_transfer` package (generally NTP).
+            Standard volumetric flow at Normal Temperature and Pressure.
         """
         d = (4*area/math.pi)**0.5  # diameter for the leak opening
         exit_ = ht.piping.Exit(d)
@@ -372,7 +366,9 @@ class Source:
             Hole = ht.piping.Orifice(d)
             TempPiping.insert(1, Hole)
         m_dot = TempPiping.m_dot(ht.P_NTP)
-        return ht.piping.to_standard_flow(m_dot, fluid)
+        fluid_NTP = fluid.copy()
+        fluid_NTP.update_kw(P=ht.P_NTP, T=ht.T_NTP)
+        return m_dot.to(ureg.ft**3/ureg.min, 'sf', rho=fluid_NTP.Dmass)
 
     def _make_leak(self, name, failure_rate, q_std, N):
         """Format failure rate, flow rate and expected time duration of the
