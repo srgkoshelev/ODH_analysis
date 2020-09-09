@@ -138,7 +138,7 @@ class Source:
                             logger.warning('Leak area cannot be larger'
                                            ' than pipe area.')
                             continue
-                    q_std = self._leak_flow(temp_tube, area, fluid)
+                    q_std = Source._leak_flow(temp_tube, area, fluid)
                     if max_flow is not None:
                         fluid_NTP = fluid.copy()
                         fluid_NTP.update_kw(P=ht.P_NTP, T=ht.T_NTP)
@@ -187,7 +187,7 @@ class Source:
                 continue
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
-            q_std = self._leak_flow(Pipe, area, fluid)
+            q_std = Source._leak_flow(Pipe, area, fluid)
             self.leaks.append(
                 self._make_leak(name, failure_rate, q_std, N))
 
@@ -243,7 +243,7 @@ class Source:
                 continue
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
-            q_std = self._leak_flow(flow_path, area, fluid)
+            q_std = Source._leak_flow(flow_path, area, fluid)
             self.leaks.append(
                 self._make_leak(name, failure_rate, q_std, N))
 
@@ -282,9 +282,38 @@ class Source:
                 continue
             # If fluid not defined use fluid of the Source
             fluid = fluid or self.fluid
-            q_std = self._leak_flow(Pipe, area, fluid)
+            q_std = Source._leak_flow(Pipe, area, fluid)
             self.leaks.append(
                 self._make_leak(name, failure_rate, q_std, N))
+
+    def pressure_vessel_failure(self, q_std_rupture, fluid=None):
+        """Add pressure vessel failure to leaks dict.
+
+        Store failure rate, flow rate and expected time duration of
+        the event for transfer line failure. Based on FESHM 4240.
+        Failure modes are analyzed by `Volume.odh` method.
+
+        Parameters
+        ----------
+        q_std_rupture : ureg.Quantity {length: 3, time: -1}
+            Standard volumetric flow rate for pressure vessel rupture.
+        fluid : heat_transfer.ThermState
+            Thermodynamic state of the fluid stored in the source.
+        """
+        # If fluid not defined use fluid of the Source
+        fluid = fluid or self.fluid
+        for case, parameters in TABLE_2['Vessel, pressure'].items():
+            name = 'Pressure vessel ' + case
+            if isinstance(parameters, dict):
+                area = parameters['Area']
+                failure_rate = parameters['Failure rate']
+                q_std = Source._leak_flow(ht.piping.Pipe(1, L=0*ureg.m), area,
+                                        fluid)
+            else:
+                failure_rate = parameters
+                q_std = q_std_rupture
+            self.leaks.append(
+                self._make_leak(name, failure_rate, q_std, 1))
 
     def constant_leak(self, name, q_std, N=1):
         """Add constant leak to leaks dict.
@@ -332,7 +361,8 @@ class Source:
         self.leaks.append(
             self._make_leak(name, failure_rate, q_std, N))
 
-    def _leak_flow(self, tube, area, fluid):
+    @classmethod
+    def _leak_flow(cls, tube, area, fluid):
         """Calculate leak flow/release for a given piping element.
 
         For this calculation the gas is assumed to have no pressure loss on
