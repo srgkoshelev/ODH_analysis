@@ -142,8 +142,7 @@ class Source:
                     if max_flow is not None:
                         fluid_NTP = fluid.copy()
                         fluid_NTP.update_kw(P=ht.P_NTP, T=ht.T_NTP)
-                        q_std_max = max_flow.to(ureg.ft**3/ureg.min, 'sf',
-                                                rho=fluid_NTP.Dmass)
+                        q_std_max = max_flow / fluid_NTP.Dmass
                         q_std = min(q_std, q_std_max)
                     self.leaks.append(
                         self._make_leak(name, failure_rate, q_std, N_events))
@@ -398,7 +397,8 @@ class Source:
         m_dot = TempPiping.m_dot(ht.P_NTP)
         fluid_NTP = fluid.copy()
         fluid_NTP.update_kw(P=ht.P_NTP, T=ht.T_NTP)
-        return m_dot.to(ureg.ft**3/ureg.min, 'sf', rho=fluid_NTP.Dmass)
+        q_std = m_dot / fluid_NTP.Dmass
+        return q_std
 
     def _make_leak(self, name, failure_rate, q_std, N):
         """Format failure rate, flow rate and expected time duration of the
