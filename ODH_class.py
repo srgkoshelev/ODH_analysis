@@ -6,6 +6,7 @@ https://eshq.fnal.gov/manuals/feshm/)
 This package is maintained at https://github.com/srgkoshelev/ODH_analysis"""
 
 import math
+from scipy.special import binom
 import heat_transfer as ht
 from copy import copy
 from collections import namedtuple
@@ -832,12 +833,8 @@ def prob_m_of_n(m, n, T, l):
     float
         Probability of m out of n units working.
     """
-    C_n_m = math.factorial(n)/(math.factorial(n-m)*math.factorial(m))
     PFD_one_unit = l*T
-    # Adjustment coefficient: T/(n-m+1) will be average failure reveal time
-    # (D. Smith, Reliability..., p. 108)
-    F_adj = 1/(n-m+1)
-    m_of_n = C_n_m*(PFD_one_unit)**(n-m)*(1-PFD_one_unit)**m*F_adj
+    m_of_n = binom(n, m) * (PFD_one_unit)**(n-m) * (1-PFD_one_unit)**m
     return m_of_n
 
 
