@@ -723,8 +723,8 @@ class Volume:
                 row.append(f'{f_mode.source.name} {f_mode.name}')
                 row.append(f'{f_mode.N_fan}')
                 row.append(f'{f_mode.O2_conc:.0%}')
-                row.append(f'{f_mode.tau.to(ureg.min).magnitude:,.1f}')
-                row.append(f'{f_mode.phi.to(1/ureg.hr).magnitude:.2}')
+                row.append(f'{f_mode.tau.m_as(ureg.min):,.1f}')
+                row.append(f'{f_mode.phi.m_as(1/ureg.hr):.2}')
                 table.append(row)
         return table
 
@@ -734,7 +734,7 @@ class Volume:
         header = ['Source', 'Failure', 'Event failure rate, 1/hr', '# of',
                   'Total failure rate, 1/hr', 'Leak rate, SCFM',
                   '# fans working', 'Fan rate, SCFM', 'Event duration, min',
-                  'Oxygen concentration', 'Fatality prob',
+                  'Oxygen concentration', 'Fatality prob', 'Case prob',
                   'Fatality rate, 1/hr']
         # 'Total failure rate', 'ODH protection PFD', 'Building is powered'
         table.append(header)
@@ -743,16 +743,17 @@ class Volume:
             table.append([
                 f_mode.source.name,
                 f_mode.name,
-                (f_mode.leak_fr/f_mode.N).to(1/ureg.hr).magnitude,
+                (f_mode.leak_fr/f_mode.N).m_as(1/ureg.hr),
                 f_mode.N,
-                f_mode.leak_fr.to(1/ureg.hr).magnitude,
-                f_mode.q_leak.to(ureg.ft**3/ureg.min).magnitude,
+                f_mode.leak_fr.m_as(1/ureg.hr),
+                f_mode.q_leak.m_as(ureg.ft**3/ureg.min),
                 f_mode.N_fan,
-                f_mode.Q_fan.to(ureg.ft**3/ureg.min).magnitude,
-                f_mode.tau.to(ureg.min).magnitude,
+                f_mode.Q_fan.m_as(ureg.ft**3/ureg.min),
+                f_mode.tau.m_as(ureg.min),
                 f_mode.O2_conc,
                 f_mode.F_i,
-                f_mode.phi.to(1/ureg.hr).magnitude])
+                f_mode.P_i/f_mode.leak_fr,
+                f_mode.phi.m_as(1/ureg.hr)])
         filename += '.xlsx'
         with xlsxwriter.Workbook(filename) as workbook:
             header_format = workbook.add_format({'bold': True,
@@ -777,13 +778,13 @@ class Volume:
             worksheet.set_column(5, 5, None, flow_format)
             worksheet.set_column(8, 8, None, sci_format)
             worksheet.set_column(9, 9, None, percent_format)
-            worksheet.set_column(10, 11, None, sci_format)
+            worksheet.set_column(10, 12, None, sci_format)
             # Writing total/summary
             N_rows = len(table)
             N_cols = len(table[0])
             worksheet.write(N_rows+1, N_cols-2, 'Total fatality rate, 1/hr')
             worksheet.write(N_rows+1, N_cols-1,
-                            self.phi.to(1/ureg.hr).magnitude)
+                            self.phi.m_as(1/ureg.hr))
             worksheet.write(N_rows+2, N_cols-2, 'ODH class')
             worksheet.write(N_rows+2, N_cols-1, self.odh_class(),
                             number_format)
